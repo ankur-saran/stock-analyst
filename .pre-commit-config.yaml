@@ -1,0 +1,57 @@
+repos:
+  # ---------------------------------------------------------------------------
+  # Python — lint & format (ruff replaces flake8 + isort + pyupgrade)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        name: ruff lint
+        args: ["--fix"]
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        types_or: [python, pyi]
+
+  # ---------------------------------------------------------------------------
+  # Python — static type checking
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.1
+    hooks:
+      - id: mypy
+        name: mypy
+        types_or: [python, pyi]
+        args: ["--ignore-missing-imports", "--strict"]
+        additional_dependencies:
+          - pydantic>=2.0
+          - sqlalchemy>=2.0
+          - types-httpx
+
+  # ---------------------------------------------------------------------------
+  # TypeScript / JavaScript — lint
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v8.57.0
+    hooks:
+      - id: eslint
+        name: eslint
+        files: \.(ts|tsx|js|jsx)$
+        types: [file]
+        additional_dependencies:
+          - eslint@8.57.0
+          - eslint-config-next@14.2.29
+          - typescript@5.5.4
+
+  # ---------------------------------------------------------------------------
+  # Prettier — format TS/JS/JSON/CSS/YAML/Markdown
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.3.3
+    hooks:
+      - id: prettier
+        name: prettier
+        types_or: [ts, tsx, javascript, jsx, json, css, yaml, markdown]
+        additional_dependencies:
+          - prettier@3.3.3
+          - prettier-plugin-tailwindcss@0.6.6

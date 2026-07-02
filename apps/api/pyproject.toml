@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "api"
+version = "0.1.0"
+description = "FastAPI backend for the Stock Analyst platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]",
+    "python-jose[cryptography]",
+    "pydantic-settings",
+    "structlog",
+    "flower",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]

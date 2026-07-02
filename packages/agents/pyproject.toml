@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agents"
+version = "0.1.0"
+description = "LangGraph agent implementations for equity research workflows"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.2",
+    "langchain-anthropic",
+    "langchain-openai",
+    "langsmith",
+    "litellm",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agents"]

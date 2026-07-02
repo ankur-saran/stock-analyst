@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shared"
+version = "0.1.0"
+description = "Shared Pydantic models, SQLAlchemy base, and config for the Stock Analyst platform"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "asyncpg",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shared"]

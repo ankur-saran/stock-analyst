@@ -1,0 +1,25 @@
+model_list:
+  - model_name: primary
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: secondary
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: local
+    litellm_params:
+      model: ollama/llama3.1:70b
+      api_base: http://ollama:11434
+
+router_settings:
+  fallbacks:
+    - primary: ["local"]
+  context_window_fallbacks:
+    - primary: ["secondary"]
+
+litellm_settings:
+  success_callback: ["langsmith"]
+  drop_params: true
