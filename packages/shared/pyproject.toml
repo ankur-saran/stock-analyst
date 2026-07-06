@@ -9,6 +9,7 @@ description = "Shared Pydantic models, SQLAlchemy base, and config for the Stock
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
+    "pydantic-settings>=2.0",
     "sqlalchemy>=2.0",
     "alembic",
     "asyncpg",
@@ -16,3 +17,6 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/shared"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/"]
