@@ -1,26 +1,203 @@
 {
-  "realm": "stockanalyst",
+  "realm": "stock-analyst",
+  "displayName": "Stock Analyst AI",
   "enabled": true,
-  "displayName": "Stock Analyst",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      {
+        "name": "viewer",
+        "description": "Read-only access to analysis outputs",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "analyst",
+        "description": "Can create and manage coverages",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "senior_analyst",
+        "description": "Can approve and publish analysis",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "admin",
+        "description": "Full platform administration",
+        "composite": false,
+        "clientRole": false
+      }
+    ],
+    "client": {}
+  },
   "clients": [
     {
-      "clientId": "stockanalyst-api",
+      "clientId": "stock-analyst-api",
+      "name": "Stock Analyst API",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
       "bearerOnly": false,
+      "clientAuthenticatorType": "client-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "stock-analyst-web",
+      "name": "Stock Analyst Web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "clientAuthenticatorType": "client-secret",
+      "serviceAccountsEnabled": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": true,
-      "redirectUris": ["http://localhost:3000/*"],
-      "webOrigins": ["http://localhost:3000"]
+      "directAccessGrantsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "https://*.stock-analyst.internal/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "https://*.stock-analyst.internal"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst-a",
+      "email": "analyst-a@test.com",
+      "firstName": "Analyst",
+      "lastName": "A",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["analyst"]
+    },
+    {
+      "username": "senior-a",
+      "email": "senior-a@test.com",
+      "firstName": "Senior",
+      "lastName": "A",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["senior_analyst"]
+    },
+    {
+      "username": "admin-a",
+      "email": "admin-a@test.com",
+      "firstName": "Admin",
+      "lastName": "A",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "viewer-a",
+      "email": "viewer-a@test.com",
+      "firstName": "Viewer",
+      "lastName": "A",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["viewer"]
+    },
+    {
+      "username": "analyst-b",
+      "email": "analyst-b@test.com",
+      "firstName": "Analyst",
+      "lastName": "B",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000002"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "TestPass123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["analyst"]
     }
   ]
 }
