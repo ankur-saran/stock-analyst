@@ -1,0 +1,231 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+
+  # ── Lint: Python ─────────────────────────────────────────────────────────────
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-lint-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: pip-lint-
+
+      - name: Install lint tools and packages
+        run: |
+          pip install ruff mypy minio structlog pydantic pydantic-settings sqlalchemy asyncpg
+          pip install -e packages/shared
+          pip install -e packages/rag
+          pip install -e packages/agents
+
+      - name: ruff check
+        run: ruff check packages/ apps/api/
+
+      - name: ruff format --check
+        run: ruff format --check packages/ apps/api/
+
+      - name: mypy
+        run: |
+          mypy packages/shared packages/rag packages/agents apps/api \
+            --strict --ignore-missing-imports
+
+  # ── Lint: Frontend ───────────────────────────────────────────────────────────
+  lint-frontend:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+        working-directory: apps/web
+
+  # ── Test: Unit ───────────────────────────────────────────────────────────────
+  test-unit:
+    name: Unit Tests
+    needs: lint-python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-unit-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: pip-unit-
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov pytest-asyncio minio structlog pydantic-settings
+          pip install -e packages/shared
+          pip install -e packages/rag
+          pip install -e packages/agents
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ \
+            --cov=apps/api/services \
+            --cov-report=xml \
+            --cov-fail-under=80 \
+            -v
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  # ── Test: Migrations ─────────────────────────────────────────────────────────
+  test-migrations:
+    name: Migration Tests
+    needs: lint-python
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: stockanalyst
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: stockanalyst
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stockanalyst -d stockanalyst"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+    env:
+      POSTGRES_USER: stockanalyst
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: stockanalyst
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-migrate-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: pip-migrate-
+
+      - name: Install dependencies
+        run: |
+          pip install alembic asyncpg pydantic pydantic-settings sqlalchemy
+          pip install -e packages/shared
+
+      - name: alembic upgrade head
+        run: alembic upgrade head
+
+      - name: alembic downgrade base
+        run: alembic downgrade base
+
+      - name: alembic upgrade head (verify idempotent)
+        run: alembic upgrade head
+
+  # ── Test: Infrastructure (manual trigger only) ───────────────────────────────
+  test-infra:
+    name: Infrastructure Tests
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+      MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+      KEYCLOAK_ADMIN: ${{ secrets.KEYCLOAK_ADMIN }}
+      KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Docker Compose stack
+        run: docker compose -f infra/docker-compose.yml up -d --wait
+        timeout-minutes: 5
+
+      - name: Health check — Keycloak
+        run: curl --retry 10 --retry-delay 3 --retry-connrefused -sf http://localhost:8080/health/ready
+
+      - name: Health check — Qdrant
+        run: curl -sf http://localhost:6333/healthz
+
+      - name: Health check — LiteLLM
+        run: curl -sf http://localhost:4000/health
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            alembic asyncpg \
+            fastapi "uvicorn[standard]" \
+            "python-jose[cryptography]" pydantic pydantic-settings \
+            structlog minio redis httpx \
+            "sqlalchemy[asyncio]" flower \
+            pytest pytest-asyncio
+          pip install -e packages/shared
+          pip install -e packages/rag
+          pip install -e packages/agents
+
+      - name: Apply migrations
+        run: POSTGRES_HOST=localhost alembic upgrade head
+
+      - name: Seed dev data
+        run: python scripts/seed_dev.py
+
+      - name: Set up MinIO buckets
+        run: python scripts/setup_minio.py
+
+      - name: Start API server
+        run: |
+          PYTHONPATH=. uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 &
+          timeout 30 bash -c 'until curl -sf http://localhost:8000/health; do sleep 2; done'
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v

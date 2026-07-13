@@ -21,6 +21,8 @@ dependencies = [
     "httpx>=0.27",
     # Redis health check (asyncio support is built-in since redis>=4.2)
     "redis>=5.0",
+    # MinIO object storage client
+    "minio>=7.0",
 ]
 
 [project.optional-dependencies]
