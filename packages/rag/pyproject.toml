@@ -15,6 +15,17 @@ dependencies = [
     "sentence-transformers",
     "celery[redis]",
     "httpx",
+    "structlog",
+]
+
+[project.optional-dependencies]
+unstructured = [
+    "unstructured[pdf]",
+]
+test = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "reportlab",
 ]
 
 [tool.hatch.build.targets.wheel]

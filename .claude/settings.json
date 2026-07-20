@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(python -m pip install asyncpg)"
+      "PowerShell(python -m pip install asyncpg)",
+      "Bash(python -m pytest tests/unit/ -v)"
     ]
   }
 }
