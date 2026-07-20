@@ -11,7 +11,17 @@
       "Bash(python -c \"import site; print\\(site.getsitepackages\\(\\)\\)\")",
       "Bash(python -c \"from rag.ingestion.parsers.financial_normalizer import FinancialNormalizer, NormalizedValue, NormalizedPeriod; from rag.ingestion.parsers.table_extractor import TableExtractor, ExtractedTable, TableCell; print\\('ok'\\)\")",
       "Bash(python -m pytest tests/unit/test_financial_normalizer.py tests/unit/test_table_extractor.py -v)",
-      "Bash(python -m pytest tests/unit -v)"
+      "Bash(python -m pytest tests/unit -v)",
+      "Bash(curl -s -m 3 http://localhost:6333/healthz)",
+      "Bash(curl -s -m 3 http://localhost:11434/api/tags)",
+      "Bash(curl -sv -m 3 http://localhost:6333/healthz)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(curl -sv -m 3 http://localhost:11434/api/tags)",
+      "Bash(python -m pytest tests/unit/test_chunker.py -v)",
+      "Bash(python -c ' *)",
+      "Bash(python -m ruff check packages/rag/src/rag/ingestion/chunkers/hierarchical.py packages/rag/src/rag/ingestion/pipeline.py packages/rag/src/rag/connectors/qdrant_client.py tests/unit/test_chunker.py)",
+      "Bash(python -m mypy --version)",
+      "Bash(python -m mypy packages/rag/src/rag/ingestion/chunkers/hierarchical.py packages/rag/src/rag/ingestion/pipeline.py packages/rag/src/rag/connectors/qdrant_client.py --ignore-missing-imports)"
     ]
   }
 }
