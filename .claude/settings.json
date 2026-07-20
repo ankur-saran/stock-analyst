@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "PowerShell(python -m pip install asyncpg)",
-      "Bash(python -m pytest tests/unit/ -v)"
+      "Bash(python -m pytest tests/unit/ -v)",
+      "Bash(python -c \"import docling; print\\(docling.__file__\\)\")",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(python -m pip show docling)",
+      "Bash(python -c \"import rag; print\\(rag.__file__\\)\")",
+      "Bash(python -m pip show rag)",
+      "Bash(python -c \"import site; print\\(site.getsitepackages\\(\\)\\)\")",
+      "Bash(python -c \"from rag.ingestion.parsers.financial_normalizer import FinancialNormalizer, NormalizedValue, NormalizedPeriod; from rag.ingestion.parsers.table_extractor import TableExtractor, ExtractedTable, TableCell; print\\('ok'\\)\")",
+      "Bash(python -m pytest tests/unit/test_financial_normalizer.py tests/unit/test_table_extractor.py -v)",
+      "Bash(python -m pytest tests/unit -v)"
     ]
   }
 }
