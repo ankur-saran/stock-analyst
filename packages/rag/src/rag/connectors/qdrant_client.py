@@ -85,6 +85,13 @@ class QdrantConnector:
         )
         return records[0] if records else None
 
+    async def delete_by_filter(self, collection: str, filter_: dict[str, Any]) -> None:
+        await self._with_retry(
+            self._client.delete,
+            collection_name=collection,
+            points_selector=models.FilterSelector(filter=self._to_filter(filter_)),
+        )
+
     @staticmethod
     def _to_filter(filter_: dict[str, Any]) -> models.Filter:
         return models.Filter(**filter_)

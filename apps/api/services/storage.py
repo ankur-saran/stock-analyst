@@ -103,6 +103,22 @@ class StorageService:
         )
         return url
 
+    async def download_file(self, tenant_id: str, object_path: str) -> bytes:
+        """Download an object's full contents.
+
+        Raises ValueError if object_path belongs to a different tenant.
+        """
+        self._validate_tenant_path(tenant_id, object_path)
+        bucket, key = self._split_path(object_path)
+
+        logger.info("storage.download", bucket=bucket, key=key)
+        response = await asyncio.to_thread(self._client.get_object, bucket, key)
+        try:
+            return await asyncio.to_thread(response.read)
+        finally:
+            await asyncio.to_thread(response.close)
+            await asyncio.to_thread(response.release_conn)
+
     async def delete_file(self, tenant_id: str, object_path: str) -> None:
         """Delete an object.
 
