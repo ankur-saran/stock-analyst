@@ -213,6 +213,42 @@ async def list_documents(
     ]
 
 
+# ── POST /{coverage_id}/documents/{document_id}/retry ───────────────────────
+
+
+@router.post("/{coverage_id}/documents/{document_id}/retry", status_code=202)
+async def retry_document(
+    coverage_id: str,
+    document_id: str,
+    db: DbSession,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    coverage = await _get_owned_coverage(db, coverage_id, current_user.tenant_id)
+
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except ValueError:
+        raise _problem(404, "Not Found", "Document not found")
+
+    document = await db.get(Document, doc_uuid)
+    if document is None or document.coverage_id != coverage.id:
+        raise _problem(404, "Not Found", "Document not found")
+
+    document.ingest_status = IngestStatusEnum.pending
+
+    task = ingest_document_task.delay(str(document.id), str(coverage.id), str(current_user.tenant_id))
+    db.add(
+        TaskQueue(
+            tenant_id=current_user.tenant_id,
+            coverage_id=coverage.id,
+            task_type="document_ingestion",
+            celery_task_id=task.id,
+        )
+    )
+
+    return {"document_id": str(document.id), "task_id": task.id, "status": "queued"}
+
+
 # ── DELETE /{coverage_id}/documents/{document_id} ───────────────────────────
 
 

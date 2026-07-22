@@ -32,7 +32,18 @@ export async function apiFetch<T = unknown>(
 
   if (!response.ok) {
     const text = await response.text()
-    throw new ApiError(response.status, text)
+    let message = text
+    try {
+      const body = JSON.parse(text)
+      message = body?.detail ?? body?.title ?? text
+    } catch {
+      // body wasn't JSON (problem+json) — fall back to raw text
+    }
+    throw new ApiError(response.status, message || response.statusText)
+  }
+
+  if (response.status === 204) {
+    return undefined as T
   }
 
   return response.json() as Promise<T>
