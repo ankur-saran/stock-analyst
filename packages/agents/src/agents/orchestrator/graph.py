@@ -9,10 +9,19 @@ honor and are what ``tests/unit/test_langgraph_graph.py`` exercises.
 from __future__ import annotations
 
 import operator
+from functools import lru_cache
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from qdrant_client import QdrantClient
+from rag.connectors.qdrant_client import QdrantConnector
+from rag.ingestion.pipeline import EmbeddingPipeline
+from rag.retrieval.hybrid_retriever import HybridRetriever
+from shared.config import Settings
+
+from agents.shared.citation_enforcer import CitationEnforcer
+from agents.shared.message import AgentOutput
 
 
 class CoverageState(TypedDict):
@@ -115,8 +124,42 @@ async def munger_invert_node(state: CoverageState) -> CoverageState:
     raise NotImplementedError("munger_invert_node: implemented by the Munger Invert agent")
 
 
+@lru_cache(maxsize=1)
+def get_retriever() -> HybridRetriever:
+    """Lazily build the singleton retriever the enforcer BM25-searches against.
+
+    Cached because ``EmbeddingPipeline``/``HybridRetriever`` construction
+    loads the CrossEncoder reranker model — expensive to redo per node call.
+    """
+    settings = Settings()
+    raw_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+    qdrant = QdrantConnector(host=settings.qdrant_host, port=settings.qdrant_port, client=raw_client)
+    embedder = EmbeddingPipeline(ollama_url=settings.ollama_base_url, qdrant_client=raw_client)
+    return HybridRetriever(qdrant=qdrant, embedding_pipeline=embedder)
+
+
 async def citation_validation_node(state: CoverageState) -> CoverageState:
-    raise NotImplementedError("citation_validation_node: implemented by the Citation Enforcer agent")
+    output = state["output"] or {}
+    retry_count = output.get("retry_count", 0)
+
+    enforcer = CitationEnforcer(retriever=get_retriever())
+    result = await enforcer.validate(
+        output=AgentOutput(**output),
+        tenant_id=state["tenant_id"],
+        coverage_id=state["coverage_id"],
+    )
+
+    updated_output = {
+        **output,
+        "approved_by_enforcer": result.approved,
+        "enforcer_status": result.enforcer_status,
+        "citation_coverage_pct": result.citation_coverage_pct,
+        "retry_prompt": result.retry_prompt,
+        "retry_count": retry_count + (0 if result.approved else 1),
+        "hallucination_count": result.hallucination_count,
+    }
+
+    return {**state, "output": updated_output}
 
 
 async def quarterly_monitor_node(state: CoverageState) -> CoverageState:

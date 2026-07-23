@@ -12,12 +12,16 @@ checks the graph wires those functions to the right nodes at all.
 """
 from __future__ import annotations
 
+import pytest
+
+from agents.orchestrator import graph as graph_module
 from agents.orchestrator.graph import (
     CoverageState,
     build_coverage_graph,
     route_citation_result,
     route_from_init,
 )
+from agents.shared.citation_enforcer import ValidationResult
 
 
 def _base_state(**overrides: object) -> CoverageState:
@@ -139,3 +143,74 @@ def test_citation_validation_partial_after_max_retries() -> None:
 def test_citation_validation_handles_missing_output() -> None:
     state = _base_state(output=None)
     assert route_citation_result(state) == "retry"
+
+
+# ── citation_validation_node ─────────────────────────────────────────────────
+
+
+def _agent_output_dict(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "message_id": "msg-1",
+        "agent": "lynch_pitch",
+        "task_id": "task-1",
+        "coverage_id": "cov-1",
+        "tenant_id": "tenant-1",
+        "content": "Revenue grew.",
+        "citations": [],
+        "citation_coverage_pct": 0.0,
+        "llm_used": "primary",
+        "tokens_used": 10,
+        "latency_ms": 5,
+        "retry_count": 0,
+    }
+    base.update(overrides)
+    return base
+
+
+async def test_citation_validation_node_updates_output_on_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_validate(self: object, output: object, tenant_id: str, coverage_id: str) -> ValidationResult:
+        return ValidationResult(
+            approved=True,
+            enforcer_status="approved",
+            failed_checks=[],
+            citation_coverage_pct=1.0,
+            retry_prompt=None,
+            hallucination_count=0,
+        )
+
+    monkeypatch.setattr(graph_module, "get_retriever", lambda: None)
+    monkeypatch.setattr(graph_module.CitationEnforcer, "validate", fake_validate)
+
+    state = _base_state(output=_agent_output_dict())
+    new_state = await graph_module.citation_validation_node(state)
+
+    assert new_state["output"]["approved_by_enforcer"] is True
+    assert new_state["output"]["enforcer_status"] == "approved"
+    assert new_state["output"]["retry_count"] == 0
+    assert new_state["output"]["hallucination_count"] == 0
+
+
+async def test_citation_validation_node_increments_retry_count_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_validate(self: object, output: object, tenant_id: str, coverage_id: str) -> ValidationResult:
+        return ValidationResult(
+            approved=False,
+            enforcer_status="failed",
+            failed_checks=[],
+            citation_coverage_pct=0.4,
+            retry_prompt="fix your citations",
+            hallucination_count=2,
+        )
+
+    monkeypatch.setattr(graph_module, "get_retriever", lambda: None)
+    monkeypatch.setattr(graph_module.CitationEnforcer, "validate", fake_validate)
+
+    state = _base_state(output=_agent_output_dict(retry_count=2))
+    new_state = await graph_module.citation_validation_node(state)
+
+    assert new_state["output"]["approved_by_enforcer"] is False
+    assert new_state["output"]["retry_count"] == 3
+    assert route_citation_result(new_state) == "failed"
