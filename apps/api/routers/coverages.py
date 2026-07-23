@@ -7,6 +7,7 @@ hand-rolls response dicts rather than returning ORM objects.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -14,12 +15,15 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from shared.models import Coverage, CoverageStatusEnum, Industry
 
-from apps.api.db import DbSession
-from apps.api.middleware.auth import CurrentUser, get_current_user
+from agents.orchestrator.agent import OrchestratorAgent
+from agents.shared.message import AgentMessage, AgentType
+
+from apps.api.db import AsyncSessionLocal, DbSession
+from apps.api.middleware.auth import CurrentUser, get_current_user, role_required
 
 router = APIRouter(prefix="/coverages", tags=["coverages"])
 
@@ -176,3 +180,56 @@ async def get_coverage(
 @router.delete("/{coverage_id}")
 async def delete_coverage(coverage_id: str):
     return _501
+
+
+class OrchestrateRequest(BaseModel):
+    user_request: str
+
+    @field_validator("user_request")
+    @classmethod
+    def _strip_user_request(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("user_request must not be empty")
+        return v
+
+
+@router.post("/{coverage_id}/orchestrate")
+async def orchestrate(
+    coverage_id: str,
+    body: OrchestrateRequest,
+    current_user: CurrentUser = Depends(role_required("analyst")),
+) -> dict[str, Any]:
+    try:
+        coverage_uuid = uuid.UUID(coverage_id)
+    except ValueError:
+        raise _problem(404, "Not Found", "Coverage not found")
+
+    message = AgentMessage(
+        sender=AgentType.ORCHESTRATOR,
+        recipient=AgentType.ORCHESTRATOR,
+        task_id=str(uuid.uuid4()),
+        coverage_id=str(coverage_uuid),
+        tenant_id=str(current_user.tenant_id),
+        payload={"user_request": body.user_request},
+    )
+
+    # Deliberately not `db: DbSession` (the get_db dependency): that helper
+    # wraps the *whole request* in one `session.begin()` block, but dispatching
+    # a plan runs dispatch_task's add/commit/refresh/commit followed by
+    # BaseAgent's own audit-log commit — multiple mid-flight commits that a
+    # still-open `session.begin()` context manager around them raises
+    # InvalidRequestError over. A bare session left to autobegin its own
+    # transactions tolerates that same sequence fine.
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text("SET LOCAL app.current_tenant_id = :tid"),
+            {"tid": str(current_user.tenant_id)},
+        )
+        orchestrator = OrchestratorAgent(db_session=session)
+        try:
+            output = await orchestrator.run(message)
+        except ValueError as exc:
+            raise _problem(502, "Bad Gateway", f"Orchestrator failed to produce a valid plan: {exc}")
+
+    return json.loads(output.content)
