@@ -62,6 +62,7 @@ def _create_app() -> FastAPI:
     app.include_router(industries.router)
     app.include_router(documents.router)
     app.include_router(tasks.router)
+    app.include_router(tasks.coverage_tasks_router)
     app.include_router(outputs.router)
     app.include_router(admin.router)
 

@@ -18,6 +18,28 @@ export interface Industry {
   name: string
 }
 
+export interface Citation {
+  doc: string
+  section: string
+  quote: string
+}
+
+export interface IndustryPrimer {
+  id: string
+  name: string
+  primer_content: string | null
+  primer_citations: Citation[]
+  word_count: number | null
+  llm_used: string | null
+  updated_at: string | null
+}
+
+export interface IndustryAnalysisTaskResponse {
+  industry_id: string
+  task_id: string
+  status: string
+}
+
 export const EXCHANGES = ["NYSE", "NASDAQ", "LSE", "TSX", "ASX", "Other"] as const
 export type Exchange = (typeof EXCHANGES)[number]
 

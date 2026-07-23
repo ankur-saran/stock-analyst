@@ -13,6 +13,8 @@ dependencies = [
     "langchain-openai",
     "langsmith",
     "litellm",
+    "httpx",
+    "beautifulsoup4",
 ]
 
 [tool.hatch.build.targets.wheel]
