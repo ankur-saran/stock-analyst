@@ -18,12 +18,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 # Tables that carry a tenant_id column and must be isolated via RLS.
 # agent_audit_log is included even though its tenant_id has no FK.
+# kpi_timeseries is deliberately absent: it has no tenant_id column of its own
+# (only coverage_id) -- isolation is enforced transitively by every query
+# joining/filtering through coverages.tenant_id before touching this table.
 _RLS_TABLES = [
     "users",
     "coverages",
     "documents",
     "research_outputs",
-    "kpi_timeseries",
     "task_queue",
     "agent_audit_log",
 ]

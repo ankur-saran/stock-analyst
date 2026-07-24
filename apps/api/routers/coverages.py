@@ -8,6 +8,7 @@ hand-rolls response dicts rather than returning ORM objects.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -17,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, text
 
-from shared.models import Coverage, CoverageStatusEnum, Industry
+from shared.models import Coverage, CoverageStatusEnum, Industry, KpiTimeseries
 
 from agents.orchestrator.agent import OrchestratorAgent
 from agents.shared.message import AgentMessage, AgentType
@@ -233,3 +234,138 @@ async def orchestrate(
             raise _problem(502, "Bad Gateway", f"Orchestrator failed to produce a valid plan: {exc}")
 
     return json.loads(output.content)
+
+
+# --- KPI dashboard ------------------------------------------------------------
+
+# KPIs that are standard financial-statement figures (roughly the `default`
+# bucket in infra/kpi_definitions.yaml, plus a few sector variants) -- every
+# other KPI name is treated as an operational/sector-specific metric. Purely
+# a display grouping for the dashboard tabs; extraction itself doesn't care.
+_FINANCIAL_KPI_NAMES = {
+    "revenue", "gross_profit", "gross_margin", "gross_margin_pct", "ebitda",
+    "net_income", "eps_diluted", "fcf", "capex", "net_debt", "cash_equivalents",
+    "cash_and_equivalents", "shares_outstanding", "operating_margin", "total_debt",
+}
+
+_PERIOD_YEAR_RE = re.compile(r"\d{4}")
+_PERIOD_QUARTER_RE = re.compile(r"Q(\d)", re.IGNORECASE)
+
+
+def _kpi_category(kpi_name: str) -> str:
+    return "financial" if kpi_name in _FINANCIAL_KPI_NAMES else "operational"
+
+
+def _period_sort_key(period: str) -> tuple[int, int]:
+    year_match = _PERIOD_YEAR_RE.search(period)
+    quarter_match = _PERIOD_QUARTER_RE.search(period)
+    year = int(year_match.group()) if year_match else 0
+    quarter = int(quarter_match.group(1)) if quarter_match else 0
+    return (year, quarter)
+
+
+def _data_points_with_yoy(rows: list[KpiTimeseries]) -> list[dict[str, Any]]:
+    """Sort a single KPI's rows chronologically and attach YoY change per period_type."""
+    ordered = sorted(rows, key=lambda r: _period_sort_key(r.period))
+
+    points: list[dict[str, Any]] = []
+    last_value_by_period_type: dict[str, float] = {}
+    for row in ordered:
+        period_type = row.period_type.value
+        prior_value = last_value_by_period_type.get(period_type)
+        yoy_change_pct = (
+            (row.value - prior_value) / abs(prior_value) * 100
+            if prior_value is not None and prior_value != 0
+            else None
+        )
+        last_value_by_period_type[period_type] = row.value
+
+        points.append(
+            {
+                "period": row.period,
+                "period_type": period_type,
+                "value": row.value,
+                "unit": row.unit,
+                "is_restated": row.is_restated,
+                "restatement_note": row.restatement_note,
+                "citation": row.citation,
+                "yoy_change_pct": yoy_change_pct,
+                "extracted_at": row.extracted_at.isoformat(),
+            }
+        )
+    return points
+
+
+async def _require_coverage(coverage_id: str, db: DbSession, current_user: CurrentUser) -> uuid.UUID:
+    try:
+        coverage_uuid = uuid.UUID(coverage_id)
+    except ValueError:
+        raise _problem(404, "Not Found", "Coverage not found")
+
+    exists = await db.execute(
+        select(Coverage.id).where(
+            Coverage.id == coverage_uuid, Coverage.tenant_id == current_user.tenant_id
+        )
+    )
+    if exists.scalar_one_or_none() is None:
+        raise _problem(404, "Not Found", "Coverage not found")
+    return coverage_uuid
+
+
+@router.get("/{coverage_id}/kpis")
+async def list_kpis(
+    coverage_id: str,
+    db: DbSession,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    coverage_uuid = await _require_coverage(coverage_id, db, current_user)
+
+    rows = (
+        await db.execute(
+            select(KpiTimeseries).where(KpiTimeseries.coverage_id == coverage_uuid)
+        )
+    ).scalars().all()
+
+    by_kpi: dict[str, list[KpiTimeseries]] = {}
+    for row in rows:
+        by_kpi.setdefault(row.kpi_name, []).append(row)
+
+    kpis = [
+        {
+            "kpi_name": kpi_name,
+            "category": _kpi_category(kpi_name),
+            "unit": kpi_rows[0].unit,
+            "data_points": _data_points_with_yoy(kpi_rows),
+        }
+        for kpi_name, kpi_rows in sorted(by_kpi.items())
+    ]
+    return {"coverage_id": coverage_id, "kpis": kpis}
+
+
+@router.get("/{coverage_id}/kpis/{kpi_name}")
+async def get_kpi(
+    coverage_id: str,
+    kpi_name: str,
+    db: DbSession,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    coverage_uuid = await _require_coverage(coverage_id, db, current_user)
+
+    rows = (
+        await db.execute(
+            select(KpiTimeseries).where(
+                KpiTimeseries.coverage_id == coverage_uuid,
+                KpiTimeseries.kpi_name == kpi_name,
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        raise _problem(404, "Not Found", f"No KPI data found for '{kpi_name}' on this coverage")
+
+    return {
+        "coverage_id": coverage_id,
+        "kpi_name": kpi_name,
+        "category": _kpi_category(kpi_name),
+        "unit": rows[0].unit,
+        "data_points": _data_points_with_yoy(list(rows)),
+    }

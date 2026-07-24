@@ -314,6 +314,12 @@ class ResearchOutput(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Accumulates cross-quarter tracking data (e.g. Earnings Monitor's
+    # management credibility verdict per quarter) that doesn't belong in the
+    # citation-checked `content` prose itself.
+    output_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
 
     coverage: Mapped[Coverage] = relationship(
         "Coverage", back_populates="research_outputs"
@@ -523,6 +529,7 @@ class ResearchOutputCreate(_OrmBase):
     citations: list[Any] = []
     llm_used: Optional[str] = None
     tokens_used: int = 0
+    output_metadata: dict[str, Any] = {}
 
 
 class ResearchOutputRead(ResearchOutputCreate):

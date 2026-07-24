@@ -56,6 +56,7 @@ class BaseAgent(ABC):
         tier: LLMTier,
         max_tokens: int = 4096,
         extended_thinking: bool = False,
+        response_format: dict[str, Any] | None = None,
     ) -> tuple[str, str, int]:
         """Call the LiteLLM proxy for the given tier.
 
@@ -76,6 +77,11 @@ class BaseAgent(ABC):
             # Adaptive thinking — the fixed-budget_tokens form is deprecated/rejected
             # on current Claude models; let Claude decide how much to think.
             kwargs["thinking"] = {"type": "adaptive"}
+
+        if response_format is not None:
+            # Structured-extraction agents (e.g. KPI Tracker on GPT-4o) request
+            # JSON-mode output; reasoning agents never pass this.
+            kwargs["response_format"] = response_format
 
         response = await litellm.acompletion(**kwargs)
         content: str = response.choices[0].message.content

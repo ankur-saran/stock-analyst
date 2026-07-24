@@ -86,3 +86,41 @@ export interface TaskRead {
   completed_at: string | null
   error: string | null
 }
+
+// --- KPI dashboard ------------------------------------------------------------
+
+export type KpiCategory = "financial" | "operational"
+export type KpiPeriodType = "annual" | "quarterly"
+
+export interface KpiCitation {
+  document_name?: string
+  section?: string
+  page_number?: number | null
+  exact_quote?: string
+  raw_value?: string
+  [key: string]: unknown
+}
+
+export interface KpiDataPoint {
+  period: string
+  period_type: KpiPeriodType
+  value: number
+  unit: string
+  is_restated: boolean
+  restatement_note: string | null
+  citation: KpiCitation
+  yoy_change_pct: number | null
+  extracted_at: string
+}
+
+export interface KpiSeries {
+  kpi_name: string
+  category: KpiCategory
+  unit: string
+  data_points: KpiDataPoint[]
+}
+
+export interface KpiListResponse {
+  coverage_id: string
+  kpis: KpiSeries[]
+}

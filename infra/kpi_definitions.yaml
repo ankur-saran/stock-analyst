@@ -1,0 +1,34 @@
+# KPI vocabulary the KPI Tracker agent extracts per industry.
+#
+# `industries` keys are matched against `Industry.name` after normalizing to
+# snake_case (lowercase, spaces/hyphens -> underscores) -- see
+# `agents.kpi_tracker.tools.resolve_industry_key`. A coverage whose industry
+# doesn't match any key here (or has no industry at all) falls back to
+# `default`, which covers the standard financial-statement KPIs every filing
+# reports regardless of sector.
+industries:
+  enterprise_software:
+    kpis: [ARR, NRR, churn_rate, CAC, LTV, paying_customers, seats]
+  saas:
+    kpis: [ARR, MRR, NRR, churn_rate, gross_retention, CAC, LTV, DAU, MAU]
+  retail:
+    kpis: [same_store_sales, units_per_sqft, inventory_turns, gross_margin, average_ticket]
+  regional_banking:
+    kpis: [NIM, NPL_ratio, CET1_ratio, ROE, ROA, efficiency_ratio, deposits_growth]
+  semiconductor:
+    kpis: [revenue, gross_margin, backlog, book_to_bill, utilization_rate, inventory_turns]
+  manufacturing:
+    kpis: [revenue, gross_margin, backlog, book_to_bill, utilization_rate, capex_pct_revenue]
+  default:
+    kpis:
+      - revenue
+      - gross_profit
+      - gross_margin_pct
+      - ebitda
+      - net_income
+      - eps_diluted
+      - fcf
+      - capex
+      - net_debt
+      - cash_equivalents
+      - shares_outstanding

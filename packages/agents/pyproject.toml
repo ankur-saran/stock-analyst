@@ -15,6 +15,7 @@ dependencies = [
     "litellm",
     "httpx",
     "beautifulsoup4",
+    "pyyaml",
 ]
 
 [tool.hatch.build.targets.wheel]
