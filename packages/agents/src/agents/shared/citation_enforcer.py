@@ -9,14 +9,25 @@ inference) against an :class:`~agents.shared.message.AgentOutput` and
 returns a :class:`ValidationResult` the LangGraph ``citation_validation``
 node uses to either approve the output, ask the originating agent to retry
 with a specific correction prompt, or mark it ``partial``/``failed``.
+
+The hallucination check (``_check_quotes_exist_in_rag``) is two-staged: BM25
+looks for the quote verbatim first, and only on a miss does it fall back to a
+high-threshold dense-embedding search. A dense hit at that point means the
+agent's quote is semantically real but not word-for-word — a likely
+paraphrase — so it's surfaced as a ``paraphrase_warnings`` entry (logged, does
+not fail validation) rather than counted as a confirmed hallucination. Only a
+miss on *both* stages counts as a hallucination.
 """
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 
 from agents.shared.message import AgentOutput
 from rag.retrieval.hybrid_retriever import HybridRetriever
+from shared.models import AgentAuditLog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass
@@ -25,6 +36,10 @@ class CheckResult:
     passed: bool
     details: str
     failed_items: list[str] = field(default_factory=list)
+    # Populated only by "quote_exists_in_rag": quotes a dense-embedding search
+    # found at high similarity after BM25 missed them — possible paraphrases,
+    # not hallucinations, so they never affect `passed`.
+    paraphrase_items: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -35,6 +50,7 @@ class ValidationResult:
     citation_coverage_pct: float
     retry_prompt: str | None
     hallucination_count: int
+    paraphrase_warnings: list[str] = field(default_factory=list)
 
 
 # ── Regex patterns ───────────────────────────────────────────────────────────
@@ -71,11 +87,24 @@ INFERENCE_PATTERN = re.compile(
 
 _MIN_COVERAGE = 0.95
 _PARTIAL_COVERAGE_FLOOR = 0.80
+_PARAPHRASE_SIMILARITY_THRESHOLD = 0.92
+
+
+def _safe_uuid(value: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return None
 
 
 class CitationEnforcer:
-    def __init__(self, retriever: HybridRetriever) -> None:
+    def __init__(self, retriever: HybridRetriever, db: AsyncSession | None = None) -> None:
         self.retriever = retriever
+        # Optional — only present when the caller has a live session (e.g. an
+        # agent's own db) to append hallucination/paraphrase events to
+        # agent_audit_log. None in contexts (like the LangGraph node) that
+        # don't have one; audit logging is simply skipped there.
+        self.db = db
 
     async def validate(
         self, output: AgentOutput, tenant_id: str, coverage_id: str
@@ -96,6 +125,7 @@ class CitationEnforcer:
             (c for c in checks if c.check_name == "quote_exists_in_rag"), None
         )
         hallucination_count = len(hallucination_check.failed_items) if hallucination_check else 0
+        paraphrase_warnings = hallucination_check.paraphrase_items if hallucination_check else []
 
         if all_passed:
             status = "approved"
@@ -106,6 +136,11 @@ class CitationEnforcer:
 
         retry_prompt = None if all_passed else self._build_retry_prompt(checks, content)
 
+        if self.db is not None and hallucination_check is not None:
+            await self._log_hallucination_events(
+                output, tenant_id, coverage_id, hallucination_check, paraphrase_warnings
+            )
+
         return ValidationResult(
             approved=all_passed,
             enforcer_status=status,
@@ -113,6 +148,7 @@ class CitationEnforcer:
             citation_coverage_pct=citation_cov,
             retry_prompt=retry_prompt,
             hallucination_count=hallucination_count,
+            paraphrase_warnings=paraphrase_warnings,
         )
 
     # ── Individual checks ────────────────────────────────────────────────────
@@ -159,21 +195,77 @@ class CitationEnforcer:
     ) -> CheckResult:
         citations = CITATION_PATTERN.findall(content)  # (doc, section, quote)
         not_found = []
+        paraphrased = []
 
         for _doc, _section, quote in citations:
-            result = await self.retriever.retrieve_exact_quote(
-                quote=quote.strip(), tenant_id=tenant_id, coverage_id=coverage_id
+            quote_stripped = quote.strip()
+            exact = await self.retriever.retrieve_exact_quote(
+                quote=quote_stripped, tenant_id=tenant_id, coverage_id=coverage_id
             )
-            if result is None:
-                not_found.append(f'"{quote[:60]}..."')
+            if exact is not None:
+                continue
+
+            # BM25 missed the exact phrase — before calling it a
+            # hallucination, check whether a near-identical passage exists
+            # semantically. A hit there means the agent likely reworded a
+            # real quote rather than inventing one outright.
+            semantic = await self.retriever.retrieve_semantic_quote(
+                quote=quote_stripped,
+                tenant_id=tenant_id,
+                coverage_id=coverage_id,
+                min_score=_PARAPHRASE_SIMILARITY_THRESHOLD,
+            )
+            if semantic is not None:
+                paraphrased.append(f'"{quote_stripped[:60]}..."')
+            else:
+                not_found.append(f'"{quote_stripped[:60]}..."')
 
         passed = len(not_found) == 0
         return CheckResult(
             check_name="quote_exists_in_rag",
             passed=passed,
-            details=f"{len(not_found)} quotes not found in document store (potential hallucinations)",
+            details=(
+                f"{len(not_found)} quotes not found in document store (confirmed hallucinations); "
+                f"{len(paraphrased)} quotes matched only by semantic similarity (possible paraphrase)"
+            ),
             failed_items=not_found[:5],
+            paraphrase_items=paraphrased[:5],
         )
+
+    async def _log_hallucination_events(
+        self,
+        output: AgentOutput,
+        tenant_id: str,
+        coverage_id: str,
+        hallucination_check: CheckResult,
+        paraphrase_warnings: list[str],
+    ) -> None:
+        """Append-only audit trail for every confirmed hallucination and paraphrase flag.
+
+        Both are logged unconditionally (not just on rejection) since a
+        paraphrase warning never fails validation and would otherwise leave
+        no trace for human review.
+        """
+        assert self.db is not None  # only called when self.db is set
+        output_uuid = _safe_uuid(output.message_id)
+
+        events = [(item, "hallucination_detected") for item in hallucination_check.failed_items]
+        events += [(item, "paraphrase_warning") for item in paraphrase_warnings]
+        if not events:
+            return
+
+        for quote, action in events:
+            self.db.add(
+                AgentAuditLog(
+                    tenant_id=uuid.UUID(tenant_id),
+                    coverage_id=uuid.UUID(coverage_id),
+                    agent_name=output.agent.value,
+                    action=action,
+                    output_id=output_uuid,
+                    log_metadata={"quote": quote},
+                )
+            )
+        await self.db.commit()
 
     def _check_no_unsourced_numbers(self, content: str) -> CheckResult:
         sentences = re.split(r"(?<=[.!?])\s+", content)

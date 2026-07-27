@@ -33,6 +33,7 @@ logger = structlog.get_logger()
 _SEARCHABLE_CHUNK_TYPES = ("child", "table")
 _RRF_K = 60
 _EXACT_QUOTE_SCORE_THRESHOLD = 0.5
+_SEMANTIC_QUOTE_SCORE_THRESHOLD = 0.92
 
 
 @dataclass
@@ -126,6 +127,50 @@ class HybridRetriever:
 
         top = results[0]
         if top.score is None or top.score < _EXACT_QUOTE_SCORE_THRESHOLD:
+            return None
+
+        payload = top.payload or {}
+        return RetrievedChunk(
+            chunk_id=str(top.id),
+            content=payload.get("content", ""),
+            metadata=payload,
+            score=top.score,
+            parent_content=None,
+            parent_chunk_id=payload.get("parent_chunk_id"),
+        )
+
+    async def retrieve_semantic_quote(
+        self,
+        quote: str,
+        tenant_id: str,
+        coverage_id: str,
+        min_score: float = _SEMANTIC_QUOTE_SCORE_THRESHOLD,
+    ) -> RetrievedChunk | None:
+        """Dense-only fallback for a claimed quote BM25 couldn't find verbatim.
+
+        Used by the Citation Enforcer only after :meth:`retrieve_exact_quote`
+        has already missed. A hit here at a very high cosine-similarity
+        threshold means the quote is semantically near-identical to real
+        source text but not a verbatim match — most likely a light paraphrase
+        rather than an invented claim, so callers should treat this as a
+        "flag for review" signal rather than a hard failure.
+        """
+        self._require_tenant_scope(tenant_id, coverage_id)
+        collection = self.embedder.collection_name(tenant_id)
+        base_filter = self._build_filter(tenant_id, coverage_id, None)
+
+        query_embedding = await self.embedder.embed_single(quote)
+        results = await self.qdrant.search_dense(
+            collection=collection,
+            query_vector=query_embedding,
+            filter_=base_filter,
+            limit=1,
+        )
+        if not results:
+            return None
+
+        top = results[0]
+        if top.score is None or top.score < min_score:
             return None
 
         payload = top.payload or {}

@@ -1,0 +1,59 @@
+{
+  "agent": "munger_invert",
+  "version": "1.0",
+  "test_cases": [
+    {
+      "test_id": "MI-001",
+      "name": "AAPL standard bear case with full filings",
+      "coverage_id": "AAPL_EVAL_2023",
+      "documents": ["aapl_10k_2021.pdf", "aapl_10k_2022.pdf", "aapl_10k_2023.pdf"],
+      "must_answer_questions": [1, 2, 3, 4, 5, 6, 7, 8],
+      "must_not_contain": [
+        "might", "could potentially", "perhaps", "may possibly",
+        "exciting opportunity", "compelling", "robust", "synergies"
+      ],
+      "min_citation_coverage": 0.95,
+      "max_word_count": 900,
+      "must_cite_sections": ["Risk Factors", "Financial Statements", "Business"]
+    },
+    {
+      "test_id": "MI-002",
+      "name": "Company with only 1 year of filings — no prior-year evidence for management track record",
+      "notes": "Q6 (management value destruction history) requires prior-year comparisons this coverage doesn't have",
+      "coverage_id": "NEWCO_EVAL_2023",
+      "documents": ["newco_10k_2023.pdf"],
+      "must_answer_questions": [1, 2, 3, 4, 5, 6, 7, 8],
+      "must_contain_not_found": ["Q6"],
+      "min_citation_coverage": 0.80,
+      "max_word_count": 900
+    },
+    {
+      "test_id": "MI-003",
+      "name": "Pre-revenue company — no earnings/cash flow history to permanently impair",
+      "notes": "Q4 (permanent impairment of earnings/cash flow) has nothing to point to pre-revenue",
+      "coverage_id": "STARTUP_EVAL_2023",
+      "documents": ["startup_s1.pdf"],
+      "must_answer_questions": [1, 2, 3, 4, 5, 6, 7, 8],
+      "q4_must_contain_not_found": true,
+      "min_citation_coverage": 0.85
+    },
+    {
+      "test_id": "MI-004",
+      "name": "Hallucination resistance — agent must not invent balance sheet risk metrics",
+      "coverage_id": "SPARSE_EVAL_2023",
+      "documents": ["sparse_10k_no_margins.pdf"],
+      "must_not_state_gross_margin": true,
+      "min_citation_coverage": 0.95
+    },
+    {
+      "test_id": "MI-005",
+      "name": "Adversarial tone and citation format compliance",
+      "notes": "No hedging language is allowed anywhere in the output, per the system prompt's absolute rules",
+      "coverage_id": "AAPL_EVAL_2023",
+      "documents": ["aapl_10k_2023.pdf"],
+      "must_not_contain": ["might", "could potentially", "perhaps", "may possibly"],
+      "all_citations_must_match_regex": "\\[[^\\]]+,\\s*[^\\]]+\\]:\\s*\"[^\"]{10,}\"",
+      "min_citation_coverage": 0.95
+    }
+  ]
+}

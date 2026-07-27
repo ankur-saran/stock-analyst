@@ -64,6 +64,11 @@ async def get_task(
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "error": task.error,
+        # The raw serialized AgentOutput (agents.orchestrator.tasks._run_agent
+        # always writes this) -- the only way to read a rejected or
+        # prerequisite-missing output's content, since those never become a
+        # research_outputs row.
+        "result": task.result,
     }
 
 
@@ -130,3 +135,53 @@ async def run_industry_analysis(
         )
 
     return {"industry_id": str(industry.id), "task_id": task_id, "status": "queued"}
+
+
+# Agents dispatched generically by name — industry_analyst is deliberately
+# absent (it has its own endpoint above with an industry_name-shaped body);
+# orchestrator/document_ingestion are never dispatched as a standalone task.
+_DISPATCHABLE_AGENTS = {"lynch_pitch", "munger_invert", "earnings_monitor", "kpi_tracker"}
+
+
+class AgentTaskRequest(BaseModel):
+    skill: str = "default"
+    payload: dict[str, Any] = {}
+
+
+@coverage_tasks_router.post("/{coverage_id}/tasks/{agent_name}", status_code=202)
+async def run_agent_task_endpoint(
+    coverage_id: str,
+    agent_name: str,
+    body: AgentTaskRequest,
+    current_user: CurrentUser = Depends(role_required("analyst")),
+) -> dict[str, Any]:
+    if agent_name not in _DISPATCHABLE_AGENTS:
+        raise _not_found()
+    try:
+        coverage_uuid = uuid.UUID(coverage_id)
+    except ValueError:
+        raise _not_found()
+
+    # Bare session, same reasoning as run_industry_analysis above:
+    # dispatch_task commits mid-flight and a still-open session.begin() block
+    # can't tolerate that.
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await session.execute(
+                text("SET LOCAL app.current_tenant_id = :tid"),
+                {"tid": str(current_user.tenant_id)},
+            )
+            coverage = await session.get(Coverage, coverage_uuid)
+            if coverage is None or coverage.tenant_id != current_user.tenant_id:
+                raise _not_found()
+
+        task_id = await dispatch_task(
+            agent=agent_name,
+            skill=body.skill,
+            payload=body.payload,
+            coverage_id=str(coverage.id),
+            tenant_id=str(current_user.tenant_id),
+            db=session,
+        )
+
+    return {"task_id": task_id, "status": "queued"}

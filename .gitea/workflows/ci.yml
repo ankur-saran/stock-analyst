@@ -229,3 +229,136 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v
+
+  # ── Eval gate: agent quality (merge to main only) ────────────────────────────
+  eval-gate:
+    name: Eval Gate
+    needs: [lint-python, test-unit]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+      MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+      KEYCLOAK_ADMIN: ${{ secrets.KEYCLOAK_ADMIN }}
+      KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      # Bearer token for the pre-seeded `analyst-a` user (tenant
+      # 00000000-0000-0000-0000-000000000001) -- see
+      # eval/fixtures/setup_fixtures.py's docstring for why this can't be
+      # minted automatically from the current Keycloak realm config.
+      EVAL_BEARER_TOKEN: ${{ secrets.EVAL_BEARER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Docker Compose stack
+        run: docker compose -f infra/docker-compose.yml up -d --wait
+        timeout-minutes: 5
+
+      - name: Health check — Keycloak
+        run: curl --retry 10 --retry-delay 3 --retry-connrefused -sf http://localhost:8080/health/ready
+
+      - name: Health check — Qdrant
+        run: curl -sf http://localhost:6333/healthz
+
+      - name: Health check — LiteLLM
+        run: curl -sf http://localhost:4000/health
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            alembic asyncpg \
+            fastapi "uvicorn[standard]" celery[redis] \
+            "python-jose[cryptography]" pydantic pydantic-settings \
+            structlog minio redis httpx \
+            "sqlalchemy[asyncio]" flower \
+            pytest pytest-asyncio
+          pip install -r eval/requirements.txt
+          pip install -e packages/shared
+          pip install -e packages/rag
+          pip install -e packages/agents
+
+      - name: Apply migrations
+        run: POSTGRES_HOST=localhost alembic upgrade head
+
+      - name: Set up MinIO buckets
+        run: python scripts/setup_minio.py
+
+      - name: Pull Ollama embedding model
+        run: docker exec stockanalyst-ollama ollama pull nomic-embed-text:v1.5
+
+      - name: Start API server
+        run: |
+          PYTHONPATH=. uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 &
+          timeout 30 bash -c 'until curl -sf http://localhost:8000/health; do sleep 2; done'
+
+      - name: Start Celery worker (agent task dispatch)
+        run: |
+          PYTHONPATH=. celery -A agents.orchestrator.tasks worker --loglevel=info &
+          sleep 5
+
+      - name: Build and index eval fixture coverages
+        run: |
+          PYTHONPATH=. python -m eval.fixtures.setup_fixtures
+
+      - name: Run eval — lynch_pitch
+        run: PYTHONPATH=. python -m eval.runners.run_eval --agent lynch_pitch --env dev --output-html eval/reports/
+
+      - name: Run eval — munger_invert
+        run: PYTHONPATH=. python -m eval.runners.run_eval --agent munger_invert --env dev --output-html eval/reports/
+
+      - name: Run eval — earnings_monitor
+        run: PYTHONPATH=. python -m eval.runners.run_eval --agent earnings_monitor --env dev --output-html eval/reports/
+
+      - name: Run eval — industry_analyst
+        run: PYTHONPATH=. python -m eval.runners.run_eval --agent industry_analyst --env dev --output-html eval/reports/
+
+      - name: Run eval — kpi_tracker
+        run: PYTHONPATH=. python -m eval.runners.run_eval --agent kpi_tracker --env dev --output-html eval/reports/
+
+      - name: Enforce aggregate quality gates
+        run: |
+          python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+
+          summaries = sorted(Path("eval/reports").glob("*.json"))
+          if not summaries:
+              sys.exit("No eval summary JSON files found under eval/reports/")
+
+          failed = []
+          for path in summaries:
+              s = json.loads(path.read_text(encoding="utf-8"))
+              agent = s["agent"]
+              if s["pass_rate"] < 1.0:
+                  failed.append(f"{agent}: pass_rate {s['pass_rate']:.0%} < 100% (failed: {s['failed_case_ids']})")
+              if s["avg_citation_coverage"] < 0.95:
+                  failed.append(f"{agent}: avg_citation_coverage {s['avg_citation_coverage']:.1%} < 95%")
+              if s["hallucination_rate"] > 0.005:
+                  failed.append(f"{agent}: hallucination_rate {s['hallucination_rate']:.2%} > 0.5%")
+
+          if failed:
+              print("EVAL GATE FAILED:")
+              for line in failed:
+                  print(f"  - {line}")
+              sys.exit(1)
+
+          print(f"Eval gate passed for {len(summaries)} agent(s).")
+          EOF
+
+      - name: Upload eval HTML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports
+          path: eval/reports/*.html
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v

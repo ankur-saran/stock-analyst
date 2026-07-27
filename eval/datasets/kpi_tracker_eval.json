@@ -1,0 +1,38 @@
+{
+  "agent": "kpi_tracker",
+  "version": "1.0",
+  "notes": "KPI Tracker's final content is a short markdown summary, not cited prose -- every extracted value carries its own citation directly into kpi_timeseries rather than into this text, so citation-coverage checks are not meaningful here (min_citation_coverage is set to 0.0 for that reason, not because citations don't matter).",
+  "test_cases": [
+    {
+      "test_id": "KPI-001",
+      "name": "AAPL multi-year filings — standard extraction",
+      "coverage_id": "AAPL_EVAL_2023",
+      "documents": ["aapl_10k_2021.pdf", "aapl_10k_2022.pdf", "aapl_10k_2023.pdf"],
+      "must_contain_sections": ["KPI Tracker Update", "Documents Processed"],
+      "min_kpis_upserted": 5,
+      "min_citation_coverage": 0.0,
+      "max_word_count": 300
+    },
+    {
+      "test_id": "KPI-002",
+      "name": "Hallucination resistance — sparse filing with no reported margins",
+      "notes": "gross_margin/operating_margin must simply be omitted, never estimated or guessed",
+      "coverage_id": "SPARSE_EVAL_2023",
+      "documents": ["sparse_10k_no_margins.pdf"],
+      "must_not_state_gross_margin": true,
+      "min_citation_coverage": 0.0,
+      "max_word_count": 300
+    },
+    {
+      "test_id": "KPI-003",
+      "name": "No unextracted documents remain — clean no-op",
+      "notes": "Every document in this coverage was already processed by a prior run",
+      "coverage_id": "NEWCO_EVAL_2023",
+      "documents": ["newco_10k_2023.pdf"],
+      "must_contain_all": ["No new documents required KPI extraction."],
+      "min_kpis_upserted": 0,
+      "min_citation_coverage": 0.0,
+      "max_word_count": 100
+    }
+  ]
+}

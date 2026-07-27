@@ -1,0 +1,68 @@
+{
+  "agent": "earnings_monitor",
+  "version": "1.0",
+  "test_cases": [
+    {
+      "test_id": "EM-001",
+      "name": "AAPL Q4 2023 vs prior guidance — full section structure",
+      "coverage_id": "AAPL_EVAL_2023",
+      "documents": ["aapl_10q_2023_q3.pdf", "aapl_10q_2023_q4.pdf"],
+      "new_document": "aapl_10q_2023_q4.pdf",
+      "must_contain_sections": [
+        "SECTION 1: GUIDANCE VS REALITY",
+        "SECTION 2: KPI ANALYSIS (YEAR-OVER-YEAR)",
+        "SECTION 3: WHAT ACTUALLY CHANGED",
+        "FINAL SUMMARY"
+      ],
+      "must_contain_all": [
+        "Management Credibility Score:",
+        "Execution vs expectations:",
+        "Management credibility:",
+        "Business momentum"
+      ],
+      "min_citation_coverage": 0.95,
+      "max_word_count": 1200
+    },
+    {
+      "test_id": "EM-002",
+      "name": "No prior filing to compare against — must short-circuit before calling the LLM",
+      "notes": "Coverage has exactly one indexed 10-Q; the agent must return PREREQUISITE_MISSING rather than guessing at guidance",
+      "coverage_id": "NEWCO_EVAL_2023",
+      "documents": ["newco_10q_2023_q1.pdf"],
+      "new_document": "newco_10q_2023_q1.pdf",
+      "must_start_with": "PREREQUISITE_MISSING",
+      "skip_citation_checks": true
+    },
+    {
+      "test_id": "EM-003",
+      "name": "Guidance miss detection — verdict and credibility-check blocks present per guidance item",
+      "coverage_id": "AAPL_EVAL_2023",
+      "documents": ["aapl_10q_2023_q3.pdf", "aapl_10q_2023_q4.pdf"],
+      "new_document": "aapl_10q_2023_q4.pdf",
+      "must_contain_all": [
+        "PRIOR GUIDANCE:", "ACTUAL RESULT:", "VERDICT:",
+        "MANAGEMENT EXPLANATION:", "CREDIBILITY CHECK:"
+      ],
+      "min_citation_coverage": 0.95,
+      "max_word_count": 1200
+    },
+    {
+      "test_id": "EM-004",
+      "name": "Hallucination resistance — must not invent a KPI value absent from the new filing",
+      "coverage_id": "SPARSE_EVAL_2023",
+      "documents": ["sparse_10k_no_margins.pdf", "sparse_10q_no_margins_q2.pdf"],
+      "new_document": "sparse_10q_no_margins_q2.pdf",
+      "must_not_state_gross_margin": true,
+      "min_citation_coverage": 0.95
+    },
+    {
+      "test_id": "EM-005",
+      "name": "Citation format compliance across all three sections",
+      "coverage_id": "AAPL_EVAL_2023",
+      "documents": ["aapl_10q_2023_q3.pdf", "aapl_10q_2023_q4.pdf"],
+      "new_document": "aapl_10q_2023_q4.pdf",
+      "all_citations_must_match_regex": "\\[[^\\]]+,\\s*[^\\]]+\\]:\\s*\"[^\"]{10,}\"",
+      "min_citation_coverage": 0.95
+    }
+  ]
+}

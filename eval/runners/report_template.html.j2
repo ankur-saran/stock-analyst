@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eval report — {{ report.agent }}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; padding: 2rem; background: #f6f7f9; color: #1a1d23;
+  }
+  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+  .subtitle { color: #5b6270; margin-bottom: 1.5rem; }
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem; margin-bottom: 2rem;
+  }
+  .stat {
+    background: #fff; border: 1px solid #e2e5ea; border-radius: 8px;
+    padding: 0.9rem 1rem;
+  }
+  .stat .value { font-size: 1.4rem; font-weight: 600; }
+  .stat .label { font-size: 0.78rem; color: #5b6270; text-transform: uppercase; letter-spacing: 0.02em; }
+  .stat.pass .value { color: #1a7f37; }
+  .stat.fail .value { color: #c0362c; }
+  .stat.warn .value { color: #b8860b; }
+
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 0.55rem 0.75rem; border-bottom: 1px solid #eceef1; font-size: 0.88rem; }
+  th { background: #eef0f3; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: #5b6270; }
+  tr:last-child td { border-bottom: none; }
+
+  .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .badge.pass { background: #dcf5e3; color: #1a7f37; }
+  .badge.fail { background: #fbdedb; color: #c0362c; }
+
+  .case { margin-bottom: 1rem; border: 1px solid #e2e5ea; border-radius: 8px; background: #fff; }
+  .case-header {
+    display: flex; align-items: center; gap: 0.6rem; padding: 0.7rem 1rem;
+    border-bottom: 1px solid #eceef1;
+  }
+  .case-header .name { font-weight: 600; }
+  .case-header .meta { margin-left: auto; color: #5b6270; font-size: 0.82rem; }
+  .checks { padding: 0.4rem 1rem 0.8rem; }
+  .check-row { display: flex; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.85rem; align-items: baseline; }
+  .check-row .dot { flex: none; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-top: 0.35rem; }
+  .check-row.pass .dot { background: #1a7f37; }
+  .check-row.fail .dot { background: #c0362c; }
+  .check-row .detail { color: #3a3f47; }
+  .check-row .name { font-weight: 600; color: #1a1d23; }
+  .error { color: #c0362c; font-size: 0.85rem; padding: 0 1rem 0.8rem; }
+
+  .bars { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+  .bar-row { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 0.5rem; font-size: 0.82rem; }
+  .bar-track { background: #eceef1; border-radius: 4px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #4c7cf0; }
+  .bar-fill.fail { background: #c0362c; }
+
+  section { margin-bottom: 2rem; }
+  h2 { font-size: 1.05rem; margin-bottom: 0.75rem; }
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #14161a; color: #e7e9ee; }
+    .stat, .case, table { background: #1d2026; border-color: #2a2e36; }
+    th { background: #23262e; color: #9aa1ad; }
+    th, td { border-color: #2a2e36; }
+    .subtitle, .stat .label, .case-header .meta, .check-row .detail { color: #9aa1ad; }
+    .bar-track { background: #2a2e36; }
+    .badge.pass { background: #143d24; color: #4fd881; }
+    .badge.fail { background: #401f1c; color: #ff8a80; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Eval report — {{ report.agent }}</h1>
+<div class="subtitle">Generated {{ generated_at }} · {{ report.results|length }} test case(s)</div>
+
+<div class="summary">
+  <div class="stat {{ 'pass' if report.pass_rate == 1.0 else 'fail' }}">
+    <div class="value">{{ "%.0f"|format(report.pass_rate * 100) }}%</div>
+    <div class="label">Pass rate</div>
+  </div>
+  <div class="stat {{ 'pass' if report.avg_citation_coverage >= 0.95 else 'warn' }}">
+    <div class="value">{{ "%.1f"|format(report.avg_citation_coverage * 100) }}%</div>
+    <div class="label">Avg citation coverage</div>
+  </div>
+  <div class="stat {{ 'pass' if report.hallucination_rate <= 0.005 else 'fail' }}">
+    <div class="value">{{ "%.2f"|format(report.hallucination_rate * 100) }}%</div>
+    <div class="label">Hallucination rate</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ report.total_paraphrase_warnings }}</div>
+    <div class="label">Paraphrase warnings</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ "%.0f"|format(report.avg_latency_ms) }}ms</div>
+    <div class="label">Avg latency</div>
+  </div>
+</div>
+
+<section>
+  <h2>Test cases</h2>
+  {% for r in report.results %}
+  <div class="case">
+    <div class="case-header">
+      <span class="badge {{ 'pass' if r.passed else 'fail' }}">{{ 'PASS' if r.passed else 'FAIL' }}</span>
+      <span class="name">{{ r.test_id }} — {{ r.name }}</span>
+      <span class="meta">{{ r.latency_ms }}ms · {{ r.tokens_used }} tokens · {{ r.llm_used or "—" }} · coverage {{ "%.0f"|format(r.citation_coverage_pct * 100) }}%</span>
+    </div>
+    <div class="checks">
+      {% for c in r.checks %}
+      <div class="check-row {{ 'pass' if c.passed else 'fail' }}">
+        <span class="dot"></span>
+        <span><span class="name">{{ c.name }}</span> — <span class="detail">{{ c.detail }}</span></span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if r.error %}<div class="error">Error: {{ r.error }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Citation coverage by case</h2>
+  <div class="bars">
+    {% for r in report.results %}
+    <div class="bar-row">
+      <span>{{ r.test_id }}</span>
+      <div class="bar-track"><div class="bar-fill {{ '' if r.citation_coverage_pct >= 0.8 else 'fail' }}" style="width: {{ (r.citation_coverage_pct * 100)|round(1) }}%;"></div></div>
+      <span>{{ "%.0f"|format(r.citation_coverage_pct * 100) }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>Latency by case</h2>
+  {% set max_latency = (report.results|map(attribute='latency_ms')|max) if report.results else 1 %}
+  <div class="bars">
+    {% for r in report.results %}
+    <div class="bar-row">
+      <span>{{ r.test_id }}</span>
+      <div class="bar-track"><div class="bar-fill" style="width: {{ ((r.latency_ms / max_latency * 100) if max_latency else 0)|round(1) }}%;"></div></div>
+      <span>{{ r.latency_ms }}ms</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>Token usage by case</h2>
+  {% set max_tokens = (report.results|map(attribute='tokens_used')|max) if report.results else 1 %}
+  <div class="bars">
+    {% for r in report.results %}
+    <div class="bar-row">
+      <span>{{ r.test_id }}</span>
+      <div class="bar-track"><div class="bar-fill" style="width: {{ ((r.tokens_used / max_tokens * 100) if max_tokens else 0)|round(1) }}%;"></div></div>
+      <span>{{ r.tokens_used }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+</body>
+</html>

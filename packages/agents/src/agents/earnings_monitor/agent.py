@@ -150,7 +150,7 @@ class EarningsMonitorAgent(BaseAgent):
             latency_ms=0,
         )
 
-        enforcer = CitationEnforcer(retriever=retriever)
+        enforcer = CitationEnforcer(retriever=retriever, db=self.db)
         validation = await enforcer.validate(draft_output, tenant_id, coverage_id)
 
         output_id = await save_quarterly_update(

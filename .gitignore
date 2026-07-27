@@ -126,3 +126,11 @@ coverage.xml
 # Alembic
 # =============================================================================
 migrations/versions/*.pyc
+
+# =============================================================================
+# Eval — generated fixture PDFs / manifest / reports (all reproducible from
+# eval/fixtures/fixture_content.py and eval/runners/run_eval.py)
+# =============================================================================
+eval/fixtures/documents/*.pdf
+eval/fixtures/manifest.json
+eval/reports/*.html

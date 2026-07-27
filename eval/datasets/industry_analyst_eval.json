@@ -1,0 +1,56 @@
+{
+  "agent": "industry_analyst",
+  "version": "1.0",
+  "test_cases": [
+    {
+      "test_id": "IA-001",
+      "name": "Enterprise Software primer — full 6-section structure plus synthesis",
+      "coverage_id": "AAPL_EVAL_2023",
+      "industry_name": "Enterprise Software",
+      "documents": ["aapl_10k_2023.pdf"],
+      "must_contain_sections": [
+        "1. Industry Purpose & Core Economics",
+        "2. Industry Structure & Competitive Shape",
+        "3. Demand & Growth Drivers",
+        "4. Supply Side, Cost Structure & Constraints",
+        "5. Technology, Regulation & Structural Change",
+        "6. Medium-Term Outlook",
+        "Investor Synthesis"
+      ],
+      "must_contain_all": [
+        "Core economic engine", "Primary growth lever",
+        "Structural constraint", "Key risk", "tend to win"
+      ],
+      "min_citation_coverage": 0.90,
+      "min_word_count": 1200,
+      "max_word_count": 1800
+    },
+    {
+      "test_id": "IA-002",
+      "name": "Sparse uploaded documents — must fall back to cited web research",
+      "notes": "Coverage has only one filing; most evidence must come from web sources cited as [Source Name, URL, Date]",
+      "coverage_id": "SPARSE_EVAL_2023",
+      "industry_name": "Semiconductor Capital Equipment",
+      "documents": ["sparse_10k_no_margins.pdf"],
+      "must_contain_regex": "\\[[^\\]]+,\\s*https?://[^\\],]+,\\s*[^\\]]+\\]:\\s*\"[^\"]{10,}\"",
+      "must_contain_sections": ["Investor Synthesis"],
+      "min_citation_coverage": 0.85,
+      "min_word_count": 1200,
+      "max_word_count": 1800
+    },
+    {
+      "test_id": "IA-003",
+      "name": "Hallucination and hype resistance — no unsourced forecasts or superlatives",
+      "coverage_id": "NEWCO_EVAL_2023",
+      "industry_name": "Regional Banking",
+      "documents": ["newco_10k_2023.pdf"],
+      "must_not_contain": [
+        "will dominate", "guaranteed growth", "obviously the best",
+        "unstoppable", "no risk", "sure thing"
+      ],
+      "min_citation_coverage": 0.90,
+      "min_word_count": 1200,
+      "max_word_count": 1800
+    }
+  ]
+}

@@ -8,7 +8,7 @@ require the async retriever call and the assembled ValidationResult.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -37,7 +37,12 @@ def _make_output(content: str) -> AgentOutput:
 
 @pytest.fixture()
 def mock_retriever() -> AsyncMock:
-    return AsyncMock()
+    retriever = AsyncMock()
+    # Default: no semantic fallback hit, so existing exact-match tests that
+    # only set `retrieve_exact_quote` keep their original hallucination
+    # semantics. Tests exercising the paraphrase path override this.
+    retriever.retrieve_semantic_quote.return_value = None
+    return retriever
 
 
 @pytest.fixture()
@@ -147,6 +152,90 @@ async def test_two_of_three_quotes_found_reports_one_hallucination(
         c for c in result.failed_checks if c.check_name == "quote_exists_in_rag"
     )
     assert hallucination_check.passed is False
+
+
+# ── 7a-7c. semantic (dense) fallback: paraphrase vs confirmed hallucination ──
+
+
+async def test_quote_missed_by_bm25_but_found_by_dense_is_paraphrase_not_hallucination(
+    enforcer: CitationEnforcer, mock_retriever: AsyncMock
+) -> None:
+    """A quote changed by a couple of words: BM25 misses, dense (>=0.92) hits."""
+    mock_retriever.retrieve_exact_quote.return_value = None
+    mock_retriever.retrieve_semantic_quote.return_value = object()
+    content = '[AAPL 10-K 2023, Business]: "Revenue was about $383 billion in fiscal 2023"'
+
+    result = await enforcer._check_quotes_exist_in_rag(content, TENANT_ID, COVERAGE_ID)
+
+    assert result.passed is True  # a paraphrase never fails the check
+    assert result.failed_items == []
+    assert len(result.paraphrase_items) == 1
+
+
+async def test_quote_missed_by_both_bm25_and_dense_is_confirmed_hallucination(
+    enforcer: CitationEnforcer, mock_retriever: AsyncMock
+) -> None:
+    """A completely invented quote: both BM25 and dense search come up empty."""
+    mock_retriever.retrieve_exact_quote.return_value = None
+    mock_retriever.retrieve_semantic_quote.return_value = None
+    content = '[AAPL 10-K 2023, Business]: "The company invented a teleportation device"'
+
+    result = await enforcer._check_quotes_exist_in_rag(content, TENANT_ID, COVERAGE_ID)
+
+    assert result.passed is False
+    assert len(result.failed_items) == 1
+    assert result.paraphrase_items == []
+
+
+async def test_validate_surfaces_paraphrase_warning_without_failing(
+    enforcer: CitationEnforcer, mock_retriever: AsyncMock
+) -> None:
+    mock_retriever.retrieve_exact_quote.return_value = None
+    mock_retriever.retrieve_semantic_quote.return_value = object()
+    content = (
+        'Revenue was $383 billion in fiscal 2023. '
+        '[AAPL 10-K 2023, Business]: "Revenue was about $383 billion in fiscal 2023"'
+    )
+    output = _make_output(content)
+
+    result = await enforcer.validate(output, TENANT_ID, COVERAGE_ID)
+
+    assert result.hallucination_count == 0
+    assert len(result.paraphrase_warnings) == 1
+    assert result.approved is True
+
+
+async def test_validate_logs_hallucination_and_paraphrase_to_audit_log_when_db_provided(
+    mock_retriever: AsyncMock,
+) -> None:
+    # Audit logging requires real UUIDs (agent_audit_log columns are typed
+    # UUID) -- unlike TENANT_ID/COVERAGE_ID above, which are only ever used
+    # as opaque retriever-filter strings in the other tests in this file.
+    tenant_uuid = "11111111-1111-1111-1111-111111111111"
+    coverage_uuid = "22222222-2222-2222-2222-222222222222"
+
+    # AsyncSession.add() is sync and commit() is async -- mirror that exactly
+    # so a plain AsyncMock() doesn't wrap `add` in a never-awaited coroutine.
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+    enforcer = CitationEnforcer(retriever=mock_retriever, db=mock_db)
+
+    mock_retriever.retrieve_exact_quote.side_effect = [None, None]
+    mock_retriever.retrieve_semantic_quote.side_effect = [object(), None]
+    content = (
+        '[Doc, SectionA]: "This quote is a slight paraphrase of the source"\n\n'
+        '[Doc, SectionB]: "This quote is entirely fabricated by the model"'
+    )
+    output = _make_output(content)
+
+    result = await enforcer.validate(output, tenant_uuid, coverage_uuid)
+
+    assert result.hallucination_count == 1
+    assert len(result.paraphrase_warnings) == 1
+    assert mock_db.add.call_count == 2  # one hallucination_detected + one paraphrase_warning
+    logged_actions = {call.args[0].action for call in mock_db.add.call_args_list}
+    assert logged_actions == {"hallucination_detected", "paraphrase_warning"}
+    mock_db.commit.assert_awaited_once()
 
 
 # ── 10-12. check_no_unsourced_numbers ─────────────────────────────────────────
