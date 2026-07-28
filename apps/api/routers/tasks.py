@@ -1,17 +1,21 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, text
 
+from shared.config import Settings
 from shared.models import Coverage, Industry, TaskQueue
+from shared.streaming import StreamingService
 
 from agents.orchestrator.tools import dispatch_task
 
 from apps.api.db import AsyncSessionLocal, DbSession
-from apps.api.middleware.auth import CurrentUser, get_current_user, role_required
+from apps.api.middleware.auth import CurrentUser, get_current_user, get_current_user_ws, role_required
+
+settings = Settings()
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -19,6 +23,10 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 # e.g. documents.py/outputs.py) since task dispatch is nested under a
 # coverage even though the industry primer itself is stored tenant-lessly.
 coverage_tasks_router = APIRouter(prefix="/coverages", tags=["tasks"])
+
+# No prefix -- the WS path is "/ws/tasks/{task_id}" at the app root, not
+# nested under "/tasks" like `router` above.
+ws_router = APIRouter(tags=["tasks"])
 
 _501 = JSONResponse(
     status_code=501,
@@ -185,3 +193,64 @@ async def run_agent_task_endpoint(
         )
 
     return {"task_id": task_id, "status": "queued"}
+
+
+@ws_router.websocket("/ws/tasks/{task_id}")
+async def task_websocket(
+    websocket: WebSocket,
+    task_id: str,
+    current_user: CurrentUser = Depends(get_current_user_ws),
+) -> None:
+    await websocket.accept()
+
+    try:
+        task_uuid = uuid.UUID(task_id)
+    except ValueError:
+        await websocket.close(code=1008, reason="Invalid task_id")
+        return
+
+    # Bare session, not `DbSession`: `TenantMiddleware` is `BaseHTTPMiddleware`
+    # and never runs for the "websocket" ASGI scope, so `request.state.tenant_id`
+    # (what `DbSession`/`get_db` relies on) was never set. Same
+    # bare-session-plus-`SET LOCAL` pattern `orchestrator/tasks.py` uses.
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await session.execute(
+                text("SET LOCAL app.current_tenant_id = :tid"),
+                {"tid": str(current_user.tenant_id)},
+            )
+            task = await session.get(TaskQueue, task_uuid)
+
+        if task is None or task.tenant_id != current_user.tenant_id:
+            await websocket.close(code=1008, reason="Task not found")
+            return
+
+        if task.status.value == "completed":
+            # Reconnected after the task already finished -- Redis pub/sub has
+            # no replay, so send the final state directly instead of waiting
+            # on a channel nothing will ever publish to again.
+            output_id = (task.result or {}).get("message_id")
+            await websocket.send_json({"type": "already_complete", "output_id": output_id})
+            await websocket.close()
+            return
+
+        if task.status.value == "failed":
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "code": "TASK_FAILED",
+                    "retry_count": 0,
+                    "detail": task.error or "",
+                }
+            )
+            await websocket.close()
+            return
+
+    streaming_svc = StreamingService(settings.redis_url)
+    try:
+        async for event in streaming_svc.subscribe_events(task_id):
+            await websocket.send_json(event)
+            if event.get("type") in ("complete", "error", "partial"):
+                break
+    except WebSocketDisconnect:
+        pass  # client disconnected — no cleanup needed beyond subscribe_events' own finally

@@ -140,6 +140,8 @@ async def save_bear_case(
     llm_used: str,
     tokens_used: int,
     db: AsyncSession,
+    approved_by_enforcer: bool = False,
+    enforcer_status: str = "pending",
 ) -> str:
     """INSERT into research_outputs with output_type="munger_invert"; return the output_id."""
     output = ResearchOutput(
@@ -149,6 +151,8 @@ async def save_bear_case(
         content=content,
         citations=citations,
         citation_coverage_pct=citation_coverage_pct,
+        approved_by_enforcer=approved_by_enforcer,
+        enforcer_status=enforcer_status,
         llm_used=llm_used,
         tokens_used=tokens_used,
     )

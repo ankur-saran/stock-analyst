@@ -24,7 +24,7 @@ from shared.models import Coverage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.shared.base_agent import BaseAgent
-from agents.shared.citation_enforcer import CITATION_PATTERN
+from agents.shared.citation_enforcer import CITATION_PATTERN, CitationEnforcer
 from agents.shared.message import AgentMessage, AgentOutput, AgentType, LLMTier
 
 from agents.lynch_pitch.tools import get_financial_summary, get_management_credibility_score
@@ -96,15 +96,41 @@ class MungerInvertAgent(BaseAgent):
 
         case = self._parse_invert_output(content, coverage_id, company_info, model_used)
 
+        draft_output = AgentOutput(
+            message_id=str(uuid.uuid4()),
+            agent=AgentType.MUNGER_INVERT,
+            task_id=message.task_id,
+            coverage_id=coverage_id,
+            tenant_id=tenant_id,
+            content=content,
+            citations=case.all_citations,
+            citation_coverage_pct=case.citation_coverage_pct,
+            llm_used=model_used,
+            tokens_used=tokens,
+            latency_ms=0,
+        )
+        enforcer = CitationEnforcer(retriever=self._require_retriever(), db=self.db)
+        await self._emit({"type": "enforcer_running", "attempt": 1})
+        validation = await enforcer.validate(draft_output, tenant_id, coverage_id)
+        await self._emit(
+            {
+                "type": "enforcer_result",
+                "approved": validation.approved,
+                "citation_coverage_pct": validation.citation_coverage_pct,
+            }
+        )
+
         output_id = await save_bear_case(
             coverage_id,
             tenant_id,
             content,
             case.all_citations,
-            case.citation_coverage_pct,
+            validation.citation_coverage_pct,
             model_used,
             tokens,
             self.db,
+            approved_by_enforcer=validation.approved,
+            enforcer_status=validation.enforcer_status,
         )
 
         return AgentOutput(
@@ -115,10 +141,16 @@ class MungerInvertAgent(BaseAgent):
             tenant_id=tenant_id,
             content=content,
             citations=case.all_citations,
-            citation_coverage_pct=case.citation_coverage_pct,
+            citation_coverage_pct=validation.citation_coverage_pct,
             llm_used=model_used,
             tokens_used=tokens,
             latency_ms=0,  # overwritten by BaseAgent.run() once _execute returns
+            # approved_by_enforcer intentionally left at its False default --
+            # see the matching comment in lynch_pitch/agent.py: save_bear_case
+            # above already persisted the real approved_by_enforcer/
+            # enforcer_status, and orchestrator.tasks._run_agent would insert a
+            # duplicate research_outputs row if this field were True here.
+            enforcer_status=validation.enforcer_status,
         )
 
     def _require_retriever(self) -> HybridRetriever:

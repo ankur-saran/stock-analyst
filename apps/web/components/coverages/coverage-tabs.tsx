@@ -19,6 +19,7 @@ interface CoverageTabsProps {
 
 const RESEARCH_ITEMS = [
   { label: "Industry", href: "research/industry" },
+  { label: "Bull vs Bear", href: "research" },
   { label: "Bull Case", href: "research/bull-case" },
   { label: "Bear Case", href: "research/bear-case" },
   { label: "Quarterly", href: "research/quarterly" },

@@ -22,7 +22,7 @@ from shared.models import Coverage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.shared.base_agent import BaseAgent
-from agents.shared.citation_enforcer import CITATION_PATTERN
+from agents.shared.citation_enforcer import CITATION_PATTERN, CitationEnforcer
 from agents.shared.message import AgentMessage, AgentOutput, AgentType, LLMTier
 
 from agents.lynch_pitch.prompts import LYNCH_PITCH_SYSTEM_PROMPT
@@ -92,15 +92,43 @@ class LynchPitchAgent(BaseAgent):
 
         pitch = self._parse_pitch_output(content, coverage_id, company_info, model_used)
 
+        if self.retriever is None:
+            raise ValueError("LynchPitchAgent requires a HybridRetriever — none was provided")
+        draft_output = AgentOutput(
+            message_id=str(uuid.uuid4()),
+            agent=AgentType.LYNCH_PITCH,
+            task_id=message.task_id,
+            coverage_id=coverage_id,
+            tenant_id=tenant_id,
+            content=content,
+            citations=pitch.all_citations,
+            citation_coverage_pct=pitch.citation_coverage_pct,
+            llm_used=model_used,
+            tokens_used=tokens,
+            latency_ms=0,
+        )
+        enforcer = CitationEnforcer(retriever=self.retriever, db=self.db)
+        await self._emit({"type": "enforcer_running", "attempt": 1})
+        validation = await enforcer.validate(draft_output, tenant_id, coverage_id)
+        await self._emit(
+            {
+                "type": "enforcer_result",
+                "approved": validation.approved,
+                "citation_coverage_pct": validation.citation_coverage_pct,
+            }
+        )
+
         output_id = await save_bull_case(
             coverage_id,
             tenant_id,
             content,
             pitch.all_citations,
-            pitch.citation_coverage_pct,
+            validation.citation_coverage_pct,
             model_used,
             tokens,
             self.db,
+            approved_by_enforcer=validation.approved,
+            enforcer_status=validation.enforcer_status,
         )
 
         return AgentOutput(
@@ -111,10 +139,17 @@ class LynchPitchAgent(BaseAgent):
             tenant_id=tenant_id,
             content=content,
             citations=pitch.all_citations,
-            citation_coverage_pct=pitch.citation_coverage_pct,
+            citation_coverage_pct=validation.citation_coverage_pct,
             llm_used=model_used,
             tokens_used=tokens,
             latency_ms=0,  # overwritten by BaseAgent.run() once _execute returns
+            # approved_by_enforcer intentionally left at its False default even
+            # when validation.approved is True: save_bull_case above already
+            # wrote the research_outputs row with the real approved_by_enforcer/
+            # enforcer_status. orchestrator.tasks._run_agent inserts a SECOND
+            # row whenever this field is True on the returned output, so it
+            # must stay False here to avoid a duplicate write.
+            enforcer_status=validation.enforcer_status,
         )
 
     async def _run_rag_searches(

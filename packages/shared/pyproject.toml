@@ -13,6 +13,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic",
     "asyncpg",
+    "redis>=5.0",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -124,3 +124,106 @@ export interface KpiListResponse {
   coverage_id: string
   kpis: KpiSeries[]
 }
+
+// --- Research outputs & streaming ---------------------------------------------
+
+export type OutputType =
+  | "industry_primer"
+  | "lynch_pitch"
+  | "munger_invert"
+  | "quarterly_update"
+  | "kpi_snapshot"
+
+export type EnforcerStatus = "pending" | "approved" | "partial" | "failed"
+
+export interface ResearchOutput {
+  id: string
+  coverage_id: string
+  output_type: OutputType
+  content: string
+  citations: Citation[]
+  citation_coverage_pct: number | null
+  approved_by_enforcer: boolean
+  enforcer_status: EnforcerStatus
+  llm_used: string | null
+  tokens_used: number
+  generated_at: string
+  approved_at: string | null
+  version: number
+  output_metadata: Record<string, unknown>
+}
+
+export interface RunAgentTaskResponse {
+  task_id: string
+  status: string
+}
+
+// Mirrors the event catalog StreamingService publishes over
+// `/ws/tasks/{task_id}` (packages/shared/src/shared/streaming.py).
+export interface ProgressEvent {
+  type: "progress"
+  step: string
+  pct: number
+  detail: string
+}
+
+export interface ChunkEvent {
+  type: "chunk"
+  content: string
+  citations: Citation[]
+}
+
+export interface CitationFoundEvent {
+  type: "citation_found"
+  doc: string
+  section: string
+  quote: string
+}
+
+export interface EnforcerRunningEvent {
+  type: "enforcer_running"
+  attempt: number
+}
+
+export interface EnforcerResultEvent {
+  type: "enforcer_result"
+  approved: boolean
+  citation_coverage_pct: number
+}
+
+export interface CompleteEvent {
+  type: "complete"
+  output_id: string
+  citation_coverage_pct: number
+  llm_used: string
+}
+
+export interface ErrorEvent {
+  type: "error"
+  code: string
+  retry_count: number
+  detail: string
+}
+
+export interface PartialEvent {
+  type: "partial"
+  output_id: string
+  citation_coverage_pct: number
+  reason: string
+}
+
+export interface AlreadyCompleteEvent {
+  type: "already_complete"
+  output_id: string | null
+}
+
+export type TaskStreamEvent =
+  | ProgressEvent
+  | ChunkEvent
+  | CitationFoundEvent
+  | EnforcerRunningEvent
+  | EnforcerResultEvent
+  | CompleteEvent
+  | ErrorEvent
+  | PartialEvent
+  | AlreadyCompleteEvent

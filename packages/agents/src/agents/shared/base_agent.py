@@ -18,22 +18,47 @@ import litellm
 from rag.retrieval.hybrid_retriever import HybridRetriever
 from shared.config import Settings
 from shared.models import AgentAuditLog
+from shared.streaming import StreamingService
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agents.shared.citation_enforcer import CITATION_PATTERN
 from agents.shared.message import AgentMessage, AgentOutput, AgentType, LLMTier
 
 settings = Settings()
+
+# Emit a chunk once the buffer reaches this size...
+_CHUNK_FLUSH_THRESHOLD = 100
+# ...but force a flush past this size even if a citation never resolves, so
+# malformed/unbounded output can't stall streaming indefinitely.
+_CHUNK_FORCE_FLUSH_THRESHOLD = 2000
 
 
 class BaseAgent(ABC):
     agent_type: AgentType  # must be set by subclass
 
     def __init__(
-        self, db_session: AsyncSession, retriever: HybridRetriever | None = None
+        self,
+        db_session: AsyncSession,
+        retriever: HybridRetriever | None = None,
+        streaming_svc: StreamingService | None = None,
+        task_id: str | None = None,
     ) -> None:
         self.db = db_session
         self.retriever = retriever
         self.litellm_base_url = settings.litellm_url
+        self.streaming_svc = streaming_svc
+        self.task_id = task_id
+
+    async def _emit(self, event: dict[str, Any]) -> None:
+        """Publish a streaming event, if streaming is configured for this run.
+
+        No-ops silently when either half of the pair is missing (e.g. every
+        call site that doesn't pass ``streaming_svc``/``task_id`` today) so
+        streaming stays entirely opt-in.
+        """
+        if self.streaming_svc is None or self.task_id is None:
+            return
+        await self.streaming_svc.publish_event(self.task_id, event)
 
     async def run(self, message: AgentMessage) -> AgentOutput:
         start = time.monotonic()
@@ -83,11 +108,82 @@ class BaseAgent(ABC):
             # JSON-mode output; reasoning agents never pass this.
             kwargs["response_format"] = response_format
 
+        if self.streaming_svc is not None and self.task_id is not None:
+            return await self._call_llm_streaming(kwargs)
+
         response = await litellm.acompletion(**kwargs)
         content: str = response.choices[0].message.content
         model_used: str = response.model
         tokens: int = response.usage.total_tokens
         return content, model_used, tokens
+
+    async def _call_llm_streaming(self, kwargs: dict[str, Any]) -> tuple[str, str, int]:
+        """Stream the completion, publishing citation-safe ``chunk``/``citation_found``
+        events as tokens arrive, then reconstruct the full response for the return value.
+
+        ``litellm.stream_chunk_builder`` is litellm's own utility for turning a
+        list of streamed chunks back into one response object (content, model,
+        usage) -- used here instead of hand-parsing so token accounting stays
+        correct regardless of provider.
+        """
+        kwargs = {**kwargs, "stream": True, "stream_options": {"include_usage": True}}
+        chunks: list[Any] = []
+        buffer = ""
+        seen_citations: set[tuple[str, str, str]] = set()
+
+        stream = await litellm.acompletion(**kwargs)
+        async for piece in stream:
+            chunks.append(piece)
+            delta = piece.choices[0].delta.content if piece.choices else None
+            if not delta:
+                continue
+            buffer += delta
+            if len(buffer) >= _CHUNK_FLUSH_THRESHOLD:
+                buffer = await self._flush_chunk(buffer, seen_citations, force=False)
+
+        if buffer:
+            await self._flush_chunk(buffer, seen_citations, force=True)
+
+        final = litellm.stream_chunk_builder(chunks, messages=kwargs["messages"])
+        content: str = final.choices[0].message.content
+        model_used: str = final.model
+        tokens: int = final.usage.total_tokens
+        return content, model_used, tokens
+
+    async def _flush_chunk(
+        self, buffer: str, seen_citations: set[tuple[str, str, str]], *, force: bool
+    ) -> str:
+        """Emit as much of ``buffer`` as is safe to send, returning the unflushed remainder.
+
+        Never splits a citation across two events: if the buffer's trailing
+        ``[`` isn't the start of a *complete* citation match, everything from
+        that ``[`` onward is held back for the next flush -- unless ``force``
+        (stream end, or the buffer has grown past the runaway cap), in which
+        case the whole thing goes out as-is.
+        """
+        flush_to = len(buffer)
+        if not force and len(buffer) < _CHUNK_FORCE_FLUSH_THRESHOLD:
+            last_open = buffer.rfind("[")
+            if last_open != -1:
+                trailing = buffer[last_open:]
+                if not CITATION_PATTERN.match(trailing):
+                    flush_to = last_open
+
+        if flush_to == 0:
+            return buffer  # nothing safe to send yet
+
+        flushed, remainder = buffer[:flush_to], buffer[flush_to:]
+        citations = []
+        for doc, section, quote in CITATION_PATTERN.findall(flushed):
+            citation = {"doc": doc.strip(), "section": section.strip(), "quote": quote.strip()}
+            key = (citation["doc"], citation["section"], citation["quote"])
+            citations.append(citation)
+            if key not in seen_citations:
+                seen_citations.add(key)
+                await self._emit({"type": "citation_found", **citation})
+
+        await self._emit({"type": "chunk", "content": flushed, "citations": citations})
+        return remainder
 
     async def _log_audit(
         self,

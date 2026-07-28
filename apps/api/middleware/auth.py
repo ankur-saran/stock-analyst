@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
 
@@ -94,6 +94,39 @@ async def get_current_user(
     raw_tenant_id = payload.get("tenant_id")
     if not raw_tenant_id:
         raise _problem(403, "Missing tenant_id claim in token")
+
+    known_roles = [r for r in payload.get("realm_access", {}).get("roles", []) if r in ROLE_HIERARCHY]
+    role = known_roles[0] if known_roles else "viewer"
+
+    return CurrentUser(
+        user_id=UUID(payload["sub"]),
+        tenant_id=UUID(str(raw_tenant_id)),
+        role=role,
+        email=payload.get("email", ""),
+    )
+
+
+async def get_current_user_ws(token: str = Query(...)) -> CurrentUser:
+    """Same JWT validation as ``get_current_user``, for WebSocket routes.
+
+    A browser WebSocket handshake can't set an Authorization header, so the
+    token travels as a query param instead (``?token=...``). Failures raise
+    ``WebSocketException`` rather than ``HTTPException`` -- FastAPI closes the
+    socket with that close code before ``accept()`` rather than trying to
+    return an HTTP error body over a protocol that no longer has one.
+    """
+    try:
+        payload = await _decode_token(token)
+    except ExpiredSignatureError:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Token has expired")
+    except JWTError as exc:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=f"Invalid token: {exc}")
+
+    raw_tenant_id = payload.get("tenant_id")
+    if not raw_tenant_id:
+        raise WebSocketException(
+            code=status.WS_1008_POLICY_VIOLATION, reason="Missing tenant_id claim in token"
+        )
 
     known_roles = [r for r in payload.get("realm_access", {}).get("roles", []) if r in ROLE_HIERARCHY]
     role = known_roles[0] if known_roles else "viewer"

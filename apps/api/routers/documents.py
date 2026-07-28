@@ -213,6 +213,32 @@ async def list_documents(
     ]
 
 
+# ── GET /{coverage_id}/documents/{document_id}/presigned-url ───────────────
+
+
+@router.get("/{coverage_id}/documents/{document_id}/presigned-url")
+async def get_document_presigned_url(
+    coverage_id: str,
+    document_id: str,
+    db: DbSession,
+    current_user: CurrentUser = Depends(get_current_user),
+    storage: StorageService = Depends(get_storage_service),
+) -> dict[str, Any]:
+    coverage = await _get_owned_coverage(db, coverage_id, current_user.tenant_id)
+
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except ValueError:
+        raise _problem(404, "Not Found", "Document not found")
+
+    document = await db.get(Document, doc_uuid)
+    if document is None or document.coverage_id != coverage.id:
+        raise _problem(404, "Not Found", "Document not found")
+
+    url = await storage.get_presigned_url(str(current_user.tenant_id), document.storage_path)
+    return {"url": url}
+
+
 # ── POST /{coverage_id}/documents/{document_id}/retry ───────────────────────
 
 

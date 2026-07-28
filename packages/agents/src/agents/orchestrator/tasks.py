@@ -27,9 +27,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from shared.config import Settings
 from shared.models import OutputTypeEnum, ResearchOutput, TaskQueue, TaskStatusEnum
+from shared.streaming import StreamingService
 
 from agents.orchestrator.graph import get_retriever
-from agents.shared.message import AgentMessage, AgentType
+from agents.shared.message import AgentMessage, AgentOutput, AgentType
 
 settings = Settings()
 
@@ -69,8 +70,15 @@ def run_agent_task(self, task_id: str, agent: str, skill: str, payload: dict[str
     asyncio.run(_execute(task_id, agent, skill, payload))
 
 
+def _error_event(exc: Exception) -> dict[str, Any]:
+    # "retry_count" is always 0 -- there's no retry loop anywhere in the
+    # pipeline today to report a real count from.
+    return {"type": "error", "code": "TASK_FAILED", "retry_count": 0, "detail": str(exc)[:500]}
+
+
 async def _execute(task_id: str, agent_name: str, skill: str, payload: dict[str, Any]) -> None:
     task_uuid = uuid.UUID(task_id)
+    streaming_svc = StreamingService(settings.redis_url)
 
     tenant_id, coverage_id = await _load_task_context(task_uuid)
     if tenant_id is None:
@@ -81,6 +89,7 @@ async def _execute(task_id: str, agent_name: str, skill: str, payload: dict[str,
     try:
         agent_cls = _resolve_agent_class(agent_name)
     except ValueError as exc:
+        await streaming_svc.publish_event(task_id, _error_event(exc))
         await _set_task_status(
             task_uuid, tenant_id, TaskStatusEnum.failed, error=str(exc), completed_at=True
         )
@@ -88,9 +97,10 @@ async def _execute(task_id: str, agent_name: str, skill: str, payload: dict[str,
 
     try:
         output_dict = await _run_agent(
-            agent_cls, agent_name, skill, payload, task_id, coverage_id, tenant_id
+            agent_cls, agent_name, skill, payload, task_id, coverage_id, tenant_id, streaming_svc
         )
     except Exception as exc:  # noqa: BLE001 - reported via task_queue.error, not re-raised
+        await streaming_svc.publish_event(task_id, _error_event(exc))
         await _set_task_status(
             task_uuid, tenant_id, TaskStatusEnum.failed, error=str(exc)[:2000], completed_at=True
         )
@@ -120,6 +130,30 @@ def _resolve_agent_class(agent_name: str) -> type:
     return agent_cls
 
 
+def _terminal_event(output: AgentOutput) -> dict[str, Any]:
+    if output.enforcer_status in ("partial", "failed"):
+        # Both mean "content was saved but not fully validated" -- there's no
+        # retry loop to distinguish "partial after retries exhausted" from a
+        # single-shot enforcer failure, and nothing raised, so "error" would
+        # be wrong here.
+        return {
+            "type": "partial",
+            "output_id": output.message_id,
+            "citation_coverage_pct": output.citation_coverage_pct,
+            "reason": "Citation Enforcer did not fully approve this output — manual review recommended.",
+        }
+    # "approved", plus agents that don't wire the enforcer at all (their
+    # AgentOutput.enforcer_status stays at the "pending" default, e.g.
+    # industry_analyst) -- both resolve to "complete" so this task's lifecycle
+    # is unaffected for agents this change doesn't touch.
+    return {
+        "type": "complete",
+        "output_id": output.message_id,
+        "citation_coverage_pct": output.citation_coverage_pct,
+        "llm_used": output.llm_used,
+    }
+
+
 async def _run_agent(
     agent_cls: type,
     agent_name: str,
@@ -128,7 +162,13 @@ async def _run_agent(
     task_id: str,
     coverage_id: str | None,
     tenant_id: str,
+    streaming_svc: StreamingService,
 ) -> dict[str, Any]:
+    await streaming_svc.publish_event(
+        task_id,
+        {"type": "progress", "step": "starting", "pct": 5, "detail": f"Running {agent_name}..."},
+    )
+
     async with _AsyncSessionLocal() as session:
         # BaseAgent._log_audit unconditionally commits inside agent.run(), which
         # closes this block's transaction out from under it — so the
@@ -141,7 +181,12 @@ async def _run_agent(
                 text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id}
             )
 
-            agent_instance = agent_cls(db_session=session, retriever=get_retriever())
+            agent_instance = agent_cls(
+                db_session=session,
+                retriever=get_retriever(),
+                streaming_svc=streaming_svc,
+                task_id=task_id,
+            )
             message = AgentMessage(
                 sender=AgentType.ORCHESTRATOR,
                 recipient=AgentType(agent_name),
@@ -173,6 +218,7 @@ async def _run_agent(
                     )
                 )
 
+        await streaming_svc.publish_event(task_id, _terminal_event(output))
         return output.model_dump(mode="json")
 
 

@@ -20,6 +20,7 @@ from rag.retrieval.hybrid_retriever import RetrievedChunk
 import agents.lynch_pitch.agent as agent_module
 from agents.lynch_pitch.agent import LynchPitchAgent, _RAG_QUERIES
 from agents.lynch_pitch.schemas import CompanyType, LynchPitch
+from agents.shared.citation_enforcer import ValidationResult
 from agents.shared.message import AgentMessage, AgentType
 
 TENANT_ID = str(uuid.uuid4())
@@ -253,6 +254,20 @@ async def test_execute_saves_output_and_returns_agent_output(
         "_call_llm",
         AsyncMock(return_value=(_valid_pitch_content(), "claude-sonnet-4-6", 4321)),
     )
+    monkeypatch.setattr(
+        agent_module.CitationEnforcer,
+        "validate",
+        AsyncMock(
+            return_value=ValidationResult(
+                approved=True,
+                enforcer_status="approved",
+                failed_checks=[],
+                citation_coverage_pct=0.97,
+                retry_prompt=None,
+                hallucination_count=0,
+            )
+        ),
+    )
 
     output = await agent._execute(_message())
 
@@ -264,6 +279,8 @@ async def test_execute_saves_output_and_returns_agent_output(
     assert output.tokens_used == 4321
     assert output.citations
     assert output.message_id == mock_save.return_value
+    assert output.citation_coverage_pct == 0.97
+    assert output.enforcer_status == "approved"
 
 
 # ── 8. RAG searches run in parallel via asyncio.gather ──────────────────────
