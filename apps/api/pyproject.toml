@@ -23,6 +23,14 @@ dependencies = [
     "redis>=5.0",
     # MinIO object storage client
     "minio>=7.0",
+    # PDF report generation (apps/api/services/report_generator.py) —
+    # requires system-level Pango/Cairo/GDK-Pixbuf libs, see Dockerfile.api
+    "weasyprint>=62.0",
+    "jinja2>=3.1",
+    # Celery Beat scheduler (apps/api/tasks/scheduler.py) — previously only
+    # an implicit transitive dependency via packages/rag; declared directly
+    # here since apps/api now instantiates Celery itself in two task modules
+    "celery[redis]>=5.4",
 ]
 
 [project.optional-dependencies]

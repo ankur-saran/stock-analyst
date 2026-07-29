@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 
 import { CoverageStatusBadge } from "@/components/coverages/coverage-status-badge"
 import { CoverageTabs } from "@/components/coverages/coverage-tabs"
+import { DownloadReportButton } from "@/components/coverages/download-report-button"
 import { apiFetchServer } from "@/lib/api-server"
 import type { Coverage } from "@/lib/types"
 import { formatRelativeTime } from "@/lib/utils"
@@ -34,7 +35,10 @@ export default async function CoverageDetailLayout({
             </p>
           </div>
         </div>
-        <CoverageStatusBadge status={coverage.status} />
+        <div className="flex items-center gap-3">
+          <DownloadReportButton coverageId={coverage.id} ticker={coverage.ticker} />
+          <CoverageStatusBadge status={coverage.status} />
+        </div>
       </div>
 
       <CoverageTabs coverageId={coverage.id} />

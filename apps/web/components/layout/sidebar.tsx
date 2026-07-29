@@ -7,6 +7,7 @@ import type { Session } from "next-auth"
 import { BarChart3, Shield, LogOut } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { NotificationBell } from "@/components/layout/notification-bell"
 import { cn } from "@/lib/utils"
 
 interface SidebarProps {
@@ -24,10 +25,11 @@ export function Sidebar({ session }: SidebarProps) {
 
   return (
     <aside className="w-64 flex-shrink-0 bg-slate-900 text-white flex flex-col h-full">
-      <div className="px-6 py-5 border-b border-slate-700">
+      <div className="flex items-center justify-between px-6 py-5 border-b border-slate-700">
         <span className="text-base font-semibold tracking-tight">
           Stock Analyst AI
         </span>
+        <NotificationBell />
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">

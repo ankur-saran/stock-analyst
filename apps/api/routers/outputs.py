@@ -11,13 +11,14 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 
 from shared.models import Coverage, OutputTypeEnum, ResearchOutput
 
 from apps.api.db import DbSession
 from apps.api.middleware.auth import CurrentUser, get_current_user
+from apps.api.services.report_generator import NoApprovedOutputsError, ReportGenerator
 
 router = APIRouter(prefix="/coverages", tags=["outputs"])
 
@@ -117,3 +118,42 @@ async def get_output(
 @router.post("/{coverage_id}/outputs/{output_id}")
 async def create_output(coverage_id: str, output_id: str):
     return _501
+
+
+@router.get("/{coverage_id}/report.pdf")
+async def download_report(
+    coverage_id: str,
+    db: DbSession,
+    current_user: CurrentUser = Depends(get_current_user),
+    sections: str | None = None,
+) -> Response:
+    """Full coverage PDF report. No role floor beyond authentication — every
+    role including viewer may download (per TASK 1 spec: "viewer minimum").
+    """
+    coverage = await _get_owned_coverage(db, coverage_id, current_user.tenant_id)
+
+    include_sections: list[str] | None = None
+    if sections:
+        include_sections = [s.strip() for s in sections.split(",") if s.strip()]
+        valid_values = {e.value for e in OutputTypeEnum}
+        invalid = [s for s in include_sections if s not in valid_values]
+        if invalid:
+            raise _problem(
+                422, "Unprocessable Entity", f"Invalid section(s): {', '.join(invalid)}"
+            )
+
+    try:
+        pdf_bytes = await ReportGenerator().generate_coverage_report(
+            db=db,
+            coverage_id=str(coverage.id),
+            tenant_id=str(current_user.tenant_id),
+            include_sections=include_sections,
+        )
+    except NoApprovedOutputsError:
+        raise _problem(404, "Not Found", "No approved research outputs found")
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{coverage.ticker}_report.pdf"'},
+    )

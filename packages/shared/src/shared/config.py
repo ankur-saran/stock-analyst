@@ -58,6 +58,16 @@ class Settings(BaseSettings):
     secret_key: SecretStr = SecretStr("changeme-generate-a-real-secret")
     environment: str = "development"
 
+    # ── SMTP (optional — earnings-complete notification emails) ────────────────
+    # Left unset by default: NotificationService treats a missing smtp_host as
+    # "email disabled" and only publishes the in-app/Redis notification.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from_addr: str | None = None
+    smtp_use_tls: bool = True
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def get_db_url(self) -> str:

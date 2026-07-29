@@ -227,3 +227,66 @@ export type TaskStreamEvent =
   | ErrorEvent
   | PartialEvent
   | AlreadyCompleteEvent
+
+// --- Analyst notes --------------------------------------------------------
+
+export interface CoverageNotes {
+  coverage_id: string
+  content: string
+  updated_at: string | null
+}
+
+export interface CitationSearchResult {
+  chunk_id: string
+  document_name: string
+  section: string
+  quote: string
+  score: number
+}
+
+// --- Notifications ---------------------------------------------------------
+
+export type NotificationType = "earnings_complete"
+
+export interface AppNotification {
+  id: string
+  type: NotificationType
+  ticker: string
+  coverage_id: string
+  output_id: string
+  timestamp: string
+  read: boolean
+}
+
+// --- Admin usage -------------------------------------------------------------
+
+export interface MonthlyCost {
+  month: string
+  cost_usd: number
+}
+
+export interface ModelUsage {
+  llm_used: string
+  tokens_used: number
+  cost_usd: number
+}
+
+export interface CoverageUsageBreakdown {
+  coverage_id: string
+  ticker: string
+  tokens_used: number
+  cost_usd: number
+}
+
+export interface TenantUsage {
+  tenant_id: string
+  tenant_name: string
+  monthly_costs: MonthlyCost[]
+  by_model: ModelUsage[]
+  by_coverage: CoverageUsageBreakdown[]
+  alert_threshold_usd: number | null
+}
+
+export interface UsageResponse {
+  tenants: TenantUsage[]
+}

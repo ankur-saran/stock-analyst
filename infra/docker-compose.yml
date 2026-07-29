@@ -152,6 +152,104 @@ services:
       retries: 5
       start_period: 30s
 
+  # ── Application services ────────────────────────────────────────────────────
+  # All three below build from the same image (Dockerfile.api, repo root) and
+  # only differ in `command`. `api` serves HTTP; `celery-worker` executes
+  # task bodies (document ingestion, agent runs, the SEC-filing sweep);
+  # `celery-beat` ONLY enqueues `check_for_new_filings` on schedule -- it
+  # must never also run as a worker (Beat + worker in one process double-
+  # enqueues on restart). Scale `celery-worker` horizontally with
+  # `docker compose up -d --scale celery-worker=3`; `celery-beat` must
+  # always run as exactly one replica, or the daily sweep fires once per
+  # replica.
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    image: stockanalyst-api:latest
+    container_name: stockanalyst-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment: &api-env
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-stockanalyst}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-stockanalyst}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      LITELLM_URL: http://litellm:4000
+      OLLAMA_BASE_URL: http://ollama:11434
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      # Optional -- unset means NotificationService only publishes the
+      # in-app/Redis notification and skips the earnings-complete email.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_ADDR: ${SMTP_FROM_ADDR:-}
+    networks:
+      - stockanalyst-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    image: stockanalyst-api:latest
+    container_name: stockanalyst-celery-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "apps.api.tasks.scheduler", "worker", "--loglevel=info"]
+    environment: *api-env
+    networks:
+      - stockanalyst-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    image: stockanalyst-api:latest
+    container_name: stockanalyst-celery-beat
+    restart: unless-stopped
+    # Scheduler only -- enqueues check_for_new_filings at 6am daily (see
+    # apps/api/celery_config.py's beat_schedule). MUST be a separate
+    # process/container from celery-worker above: Beat's job is only to
+    # publish tasks onto the same Redis broker every worker already
+    # listens on, never to execute a task body itself.
+    command: ["celery", "-A", "apps.api.celery_config", "beat", "--loglevel=info"]
+    environment: *api-env
+    networks:
+      - stockanalyst-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 networks:
   stockanalyst-net:
     name: stockanalyst-net

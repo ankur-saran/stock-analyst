@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ company_name }} ({{ ticker }}) — Research Report</title>
+<style>
+  @font-face {
+    font-family: 'ReportSerif';
+    {% if font_base64 %}
+    src: url(data:font/truetype;charset=utf-8;base64,{{ font_base64 }}) format('truetype');
+    {% endif %}
+  }
+
+  @page {
+    size: A4;
+    margin: 2cm;
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #64748b;
+    }
+  }
+
+  body {
+    font-family: {% if font_base64 %}'ReportSerif', {% endif %}Georgia, 'Times New Roman', serif;
+    color: #1e293b;
+    font-size: 10.5pt;
+    line-height: 1.55;
+  }
+
+  h1, h2, h3 {
+    font-family: {% if font_base64 %}'ReportSerif', {% endif %}Georgia, 'Times New Roman', serif;
+    color: #0f172a;
+  }
+
+  p { margin: 0 0 10px 0; }
+
+  .cover-page {
+    page-break-after: always;
+    text-align: center;
+    padding-top: 30%;
+  }
+  .cover-page .ticker-badge {
+    display: inline-block;
+    background: #0f172a;
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 20pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  .cover-page h1 { font-size: 26pt; margin-top: 18px; margin-bottom: 4px; }
+  .cover-page .meta { color: #64748b; margin-top: 6px; font-size: 11pt; }
+
+  .toc { page-break-after: always; }
+  .toc ol { line-height: 2.1; font-size: 12pt; }
+
+  section.report-section { page-break-before: always; }
+  section.report-section h2 {
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 4px;
+    margin-bottom: 14px;
+  }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    font-size: 9.5pt;
+  }
+  table.data-table th, table.data-table td {
+    border: 1px solid #cbd5e1;
+    padding: 4px 8px;
+    text-align: left;
+  }
+  table.data-table th { background: #f1f5f9; }
+
+  sup.citation-ref a { text-decoration: none; color: #0f172a; }
+
+  ol.citations-list { font-size: 9pt; padding-left: 18px; }
+  ol.citations-list li { margin-bottom: 6px; }
+
+  h3.kpi-table-title { margin-bottom: 4px; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+  <div class="cover-page">
+    <span class="ticker-badge">{{ ticker }}</span>
+    <h1>{{ company_name }}</h1>
+    <p class="meta">{{ exchange }}</p>
+    <p class="meta">Generated {{ generated_date }}</p>
+  </div>
+
+  <div class="toc">
+    <h2>Table of Contents</h2>
+    <ol>
+      {% for s in sections %}<li>{{ s.title }}</li>{% endfor %}
+      {% if kpi_tables %}<li>KPI Time-Series</li>{% endif %}
+      {% if notes_html %}<li>Analyst Notes</li>{% endif %}
+      {% if citations %}<li>Citations</li>{% endif %}
+    </ol>
+  </div>
+
+  {% for s in sections %}
+  <section class="report-section">
+    <h2>{{ s.title }}</h2>
+    {{ s.body_html | safe }}
+  </section>
+  {% endfor %}
+
+  {% if kpi_tables %}
+  <section class="report-section">
+    <h2>KPI Time-Series</h2>
+    {% for t in kpi_tables %}
+    <h3 class="kpi-table-title">{{ t.name }} ({{ t.unit }})</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Period</th><th>Value</th><th>Restated</th></tr>
+      </thead>
+      <tbody>
+        {% for r in t.rows %}
+        <tr>
+          <td>{{ r.period }}</td>
+          <td>{{ r.value }}</td>
+          <td>{{ "Yes" if r.restated else "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if notes_html %}
+  <section class="report-section">
+    <h2>Analyst Notes</h2>
+    {{ notes_html | safe }}
+  </section>
+  {% endif %}
+
+  {% if citations %}
+  <section class="report-section">
+    <h2>Citations</h2>
+    <ol class="citations-list">
+      {% for c in citations %}
+      <li id="cite-{{ c.number }}"><strong>{{ c.doc }}</strong>, {{ c.section }}: &ldquo;{{ c.quote }}&rdquo;</li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
+
+</body>
+</html>

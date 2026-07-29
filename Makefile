@@ -10,7 +10,7 @@ COMPOSE    := docker compose -f infra/docker-compose.yml
 PYTHON     := python
 API_MODULE := apps.api.main:app
 
-.PHONY: up down logs migrate seed test lint dev-api dev-web pull-model
+.PHONY: up down logs migrate seed test lint dev-api dev-web pull-model celery-worker celery-beat
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
 
@@ -52,6 +52,16 @@ dev-api:
 
 dev-web:
 	(cd apps/web && npm run dev)
+
+# Celery Beat MUST run as a separate process from celery-worker (it only
+# enqueues tasks on schedule, never executes one) -- see Dockerfile.api and
+# infra/docker-compose.yml's celery-worker/celery-beat services for the
+# containerized equivalent of these two targets.
+celery-worker:
+	PYTHONPATH=. celery -A apps.api.tasks.scheduler worker --loglevel=info
+
+celery-beat:
+	PYTHONPATH=. celery -A apps.api.celery_config beat --loglevel=info
 
 # ── Ollama model ──────────────────────────────────────────────────────────────
 

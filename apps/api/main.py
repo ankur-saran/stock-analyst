@@ -8,7 +8,18 @@ from sqlalchemy import text
 from shared.config import Settings
 from .db import engine
 from .middleware.tenant import TenantMiddleware
-from .routers import admin, coverages, documents, health, industries, outputs, tasks
+from .routers import (
+    admin,
+    coverages,
+    documents,
+    health,
+    industries,
+    notes,
+    notifications,
+    outputs,
+    search,
+    tasks,
+)
 
 settings = Settings()
 logger = structlog.get_logger()
@@ -65,6 +76,9 @@ def _create_app() -> FastAPI:
     app.include_router(tasks.coverage_tasks_router)
     app.include_router(tasks.ws_router)
     app.include_router(outputs.router)
+    app.include_router(notes.router)
+    app.include_router(search.router)
+    app.include_router(notifications.router)
     app.include_router(admin.router)
 
     return app

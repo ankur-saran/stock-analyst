@@ -1,0 +1,70 @@
+# Dockerfile.api — FastAPI app, Celery worker, and Celery Beat scheduler all
+# share this one image (see infra/docker-compose.yml's `api`, `celery-worker`,
+# and `celery-beat` services, which differ only in their `command`).
+#
+# WeasyPrint (apps/api/services/report_generator.py) links against Pango/
+# Cairo/GDK-Pixbuf at the OS level -- pip alone cannot satisfy this, hence
+# the apt-get block below. See
+# https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#linux
+# if these packages ever need updating for a newer WeasyPrint release.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        # WeasyPrint runtime libraries
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libpangoft2-1.0-0 \
+        libcairo2 \
+        libgdk-pixbuf2.0-0 \
+        libffi8 \
+        shared-mime-info \
+        fonts-liberation \
+        # Container healthcheck
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mirrors .gitea/workflows/ci.yml's dependency install exactly: apps/api is
+# never `pip install -e`'d (its pyproject.toml's hatchling wheel target
+# points at a `src/api` layout this app doesn't actually use -- the real
+# code is the flat `apps/api/` package tree below), so its runtime deps are
+# installed directly instead, then packages/{shared,rag,agents} as editable
+# installs so `import shared`, `import rag`, `import agents` resolve.
+RUN pip install --no-cache-dir \
+        fastapi>=0.111 \
+        "uvicorn[standard]" \
+        "python-jose[cryptography]" \
+        pydantic-settings \
+        structlog \
+        flower \
+        "sqlalchemy[asyncio]>=2.0" \
+        "asyncpg>=0.29" \
+        "httpx>=0.27" \
+        "redis>=5.0" \
+        "minio>=7.0" \
+        "weasyprint>=62.0" \
+        "jinja2>=3.1" \
+        "celery[redis]>=5.4"
+
+COPY packages/ packages/
+COPY apps/ apps/
+COPY migrations/ migrations/
+COPY alembic.ini .
+
+RUN pip install --no-cache-dir --no-deps \
+        -e packages/shared \
+        -e packages/rag \
+        -e packages/agents
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=20s \
+    CMD curl -sf http://localhost:8000/health || exit 1
+
+# Default command runs the API; celery-worker/celery-beat services in
+# docker-compose.yml override this with their own `command:`.
+CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -3,7 +3,8 @@ SQLAlchemy ORM models and Pydantic schemas for the Stock Analyst platform.
 
 Tables are defined in FK-safe order:
   tenants → users → industries → coverages → documents
-  → research_outputs → kpi_timeseries → agent_audit_log → task_queue
+  → research_outputs → kpi_timeseries → coverage_notes
+  → agent_audit_log → task_queue
 """
 
 from __future__ import annotations
@@ -358,6 +359,41 @@ class KpiTimeseries(Base):
     )
 
 
+class CoverageNotes(Base):
+    """Free-form analyst notes for a coverage, edited via the Tiptap editor.
+
+    One row per coverage (upserted on every autosave) rather than a
+    version-per-edit history — the PDF report and the editor both only ever
+    need the current content.
+    """
+
+    __tablename__ = "coverage_notes"
+    __table_args__ = (
+        UniqueConstraint("coverage_id", name="uq_coverage_notes_coverage_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    coverage_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("coverages.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Tiptap's serialized HTML output (editor.getHTML()) — already restricted
+    # to Tiptap's own node schema, so it's safe to render with `| safe` in the
+    # PDF report template without a second sanitization pass.
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class AgentAuditLog(Base):
     __tablename__ = "agent_audit_log"
 
@@ -560,6 +596,19 @@ class KpiTimeseriesCreate(_OrmBase):
 class KpiTimeseriesRead(KpiTimeseriesCreate):
     id: uuid.UUID
     extracted_at: datetime
+
+
+# --- CoverageNotes ---
+
+class CoverageNotesCreate(_OrmBase):
+    coverage_id: uuid.UUID
+    tenant_id: uuid.UUID
+    content: str = ""
+
+
+class CoverageNotesRead(CoverageNotesCreate):
+    id: uuid.UUID
+    updated_at: datetime
 
 
 # --- AgentAuditLog ---
