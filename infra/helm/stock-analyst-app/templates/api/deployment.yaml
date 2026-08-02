@@ -68,6 +68,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.existingSecret }}
                   key: OPENAI_API_KEY
+            - name: TAVILY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: TAVILY_API_KEY
             - name: LANGSMITH_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -83,6 +88,16 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.existingSecret }}
                   key: KEYCLOAK_ADMIN_PASSWORD
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: KEYCLOAK_CLIENT_SECRET
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: SECRET_KEY
           volumeMounts:
             # Mounting this is what makes the CSI driver sync app-secrets
             # (see the env vars above) into a real Secret.

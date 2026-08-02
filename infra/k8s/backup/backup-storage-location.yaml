@@ -1,0 +1,50 @@
+# Velero object storage config. Points at a MinIO instance OUTSIDE this k3s
+# cluster (a separate host/VM, not the in-cluster `minio.stock-analyst-data`
+# service) — that in-cluster MinIO's own PVC lives on the same data node
+# Scenario 4 (full cluster loss) and Scenario 2 (data-node failure) in
+# docs/disaster-recovery.md assume you're recovering FROM. Backups stored on
+# the thing you're recovering aren't backups.
+#
+# Prerequisites (not managed by this repo — see docs/disaster-recovery.md):
+#   1. A MinIO instance reachable at the s3Url below, on infrastructure that
+#      does not share fate with the k3s cluster (different host, different
+#      power/network domain if at all possible).
+#   2. A `velero-backups` bucket created on it.
+#   3. Velero itself installed with the AWS provider plugin:
+#        velero install \
+#          --provider aws \
+#          --plugins velero/velero-plugin-for-aws:v1.9.0 \
+#          --bucket velero-backups \
+#          --secret-file ./credentials-velero \
+#          --use-node-agent \
+#          --backup-location-config region=us-east-1,s3ForcePathStyle=true,s3Url=http://<offsite-minio-host>:9000 \
+#          --namespace velero
+#      `velero install` creates the `cloud-credentials` Secret from
+#      credentials-velero itself — populate that file's
+#      aws_access_key_id/aws_secret_access_key from the offsite MinIO's
+#      admin credentials (kept in Vault like every other credential in this
+#      repo, NOT committed here); it is not templated as a Secret manifest
+#      in this directory. `--use-node-agent` is required — it deploys the
+#      kopia-based DaemonSet that velero-schedule.yaml's
+#      defaultVolumesToFsBackup relies on, since k3s's default `local-path`
+#      StorageClass has no CSI VolumeSnapshot support to fall back on.
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: minio-backup
+  namespace: velero
+spec:
+  provider: aws
+  objectStorage:
+    bucket: velero-backups
+    prefix: k3s-cluster
+  config:
+    region: us-east-1
+    s3ForcePathStyle: "true"
+    # Replace with the offsite MinIO's actual address before applying —
+    # this placeholder intentionally does not resolve.
+    s3Url: "http://minio.offsite-backup.internal:9000"
+  credential:
+    name: cloud-credentials
+    key: cloud
+  default: true

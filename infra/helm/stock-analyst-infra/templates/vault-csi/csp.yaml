@@ -6,6 +6,13 @@
 # NOTE: these render into namespaces other than .Release.Namespace
 # (stock-analyst-data, stock-analyst) — installing this release therefore
 # requires a Helm/kubectl identity with write access to all of them.
+#
+# Each entry's `secrets` list can span multiple Vault KV paths (e.g.
+# app-secrets pulls from llm-keys, database, storage, auth AND langsmith —
+# see configure_vault.sh, which writes those as separate KV entries so
+# rotating one never touches the others). objectName must be unique within
+# a single SecretProviderClass, since it doubles as the CSI mount filename
+# and the secretObjects[].data[].objectName join key.
 {{- range .Values.vaultSecrets }}
 {{- $svc := . }}
 ---
@@ -22,17 +29,22 @@ spec:
     vaultAddress: {{ $.Values.vaultAddress | quote }}
     roleName: {{ $svc.roleName | quote }}
     objects: |
-      {{- range $svc.keys }}
+      {{- range $svc.secrets }}
+      {{- $path := .vaultPath }}
+      {{- range .keys }}
       - objectName: {{ . | quote }}
-        secretPath: {{ $svc.vaultPath | quote }}
+        secretPath: {{ $path | quote }}
         secretKey: {{ . | quote }}
+      {{- end }}
       {{- end }}
   secretObjects:
     - secretName: {{ $svc.name }}
       type: Opaque
       data:
-        {{- range $svc.keys }}
+        {{- range $svc.secrets }}
+        {{- range .keys }}
         - objectName: {{ . | quote }}
           key: {{ . | quote }}
+        {{- end }}
         {{- end }}
 {{- end }}

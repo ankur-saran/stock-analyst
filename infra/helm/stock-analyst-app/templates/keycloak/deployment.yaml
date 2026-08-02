@@ -20,6 +20,10 @@ spec:
         {{- include "stock-analyst-app.labels" . | nindent 8 }}
     spec:
       {{- include "stock-analyst-app.nodeAffinity" . | nindent 6 }}
+      # Bound (via configure_vault.sh) to the "keycloak" Vault role — lets the
+      # CSI driver below authenticate and mount keycloak-secrets, scoped to
+      # just DB + admin-bootstrap creds (no LLM provider keys).
+      serviceAccountName: vault-auth
       containers:
         - name: keycloak
           image: {{ .Values.keycloak.image }}
@@ -32,26 +36,32 @@ spec:
             - name: KC_DB_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.global.existingSecret }}
+                  name: keycloak-secrets
                   key: POSTGRES_USER
             - name: KC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.global.existingSecret }}
+                  name: keycloak-secrets
                   key: POSTGRES_PASSWORD
             - name: KEYCLOAK_ADMIN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.global.existingSecret }}
+                  name: keycloak-secrets
                   key: KEYCLOAK_ADMIN
             - name: KEYCLOAK_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.global.existingSecret }}
+                  name: keycloak-secrets
                   key: KEYCLOAK_ADMIN_PASSWORD
           ports:
             - name: http
               containerPort: {{ .Values.keycloak.port }}
+          volumeMounts:
+            # Mounting this is what makes the CSI driver sync keycloak-secrets
+            # (see the env vars above) into a real Secret.
+            - name: vault-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
           resources:
             requests:
               cpu: {{ .Values.keycloak.resources.requests.cpu }}
@@ -72,3 +82,10 @@ spec:
             initialDelaySeconds: 60
             periodSeconds: 20
             failureThreshold: 5
+      volumes:
+        - name: vault-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: keycloak-secrets

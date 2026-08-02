@@ -28,7 +28,7 @@ spec:
     spec:
       {{- include "stock-analyst-data.nodeAffinity" . | nindent 6 }}
       # Bound (via configure_vault.sh) to the "postgres" Vault role — lets the
-      # CSI driver below authenticate and mount secret/data/stock-analyst/postgres.
+      # CSI driver below authenticate and mount secret/data/stock-analyst/database.
       serviceAccountName: vault-auth
       containers:
         - name: postgres

@@ -1,0 +1,58 @@
+# Daily full backup. `defaultVolumesToFsBackup: true` (kopia-based File
+# System Backup via the node-agent DaemonSet) is used instead of
+# `volumeSnapshotLocations` — k3s's default `local-path` StorageClass has no
+# CSI VolumeSnapshot support, so a snapshot-based config would silently
+# back up zero volumes while reporting the Backup as Completed. FSB reads
+# PVC contents directly off the node and does not depend on the storage
+# class supporting snapshots.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-full-backup
+  namespace: velero
+spec:
+  schedule: "0 2 * * *" # 2am daily
+  template:
+    includedNamespaces:
+      - stock-analyst
+      - stock-analyst-data
+      - stock-analyst-ml
+      - stock-analyst-infra
+    storageLocation: minio-backup
+    defaultVolumesToFsBackup: true
+    ttl: 720h0m0s # 30 days retention
+    hooks:
+      resources:
+        - name: postgres-dump-pre-backup
+          includedNamespaces: [stock-analyst-data]
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+          pre:
+            - exec:
+                container: postgres
+                # Dumped onto the postgres-data PVC itself (not /tmp, which
+                # is the container's ephemeral overlay fs and would NOT be
+                # picked up by FSB) so the same volume walk that backs up
+                # pgdata also captures this logical dump as a
+                # crash-consistency belt-and-suspenders alongside it.
+                command:
+                  - /bin/sh
+                  - -c
+                  - >-
+                    mkdir -p /var/lib/postgresql/data/pg_dump &&
+                    PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+                    -f /var/lib/postgresql/data/pg_dump/backup.sql
+                onError: Fail
+                timeout: 5m
+        - name: postgres-dump-post-backup
+          includedNamespaces: [stock-analyst-data]
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+          post:
+            - exec:
+                container: postgres
+                command: ["/bin/sh", "-c", "rm -f /var/lib/postgresql/data/pg_dump/backup.sql"]
+                onError: Continue
+                timeout: 1m

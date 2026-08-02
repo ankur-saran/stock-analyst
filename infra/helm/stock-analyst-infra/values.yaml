@@ -28,39 +28,57 @@ traefik:
 # Every SecretProviderClass this chart renders, and the native Kubernetes
 # Secret each syncs into (consumed elsewhere via plain secretKeyRef — see
 # stock-analyst-data's postgres/minio deployments and stock-analyst-app's
-# api deployment). vaultAddress/roleName assume the AppRole + Kubernetes
-# auth mappings configure_vault.sh sets up during bootstrap.sh's manual
-# Vault-configuration step.
+# api/keycloak deployments). vaultAddress/roleName assume the Kubernetes
+# auth mappings and per-group KV paths that infra/vault/configure_vault.sh
+# sets up during bootstrap.sh's manual Vault-configuration step — each
+# entry's `secrets` list must reference the same secret/data/stock-analyst/*
+# paths that script writes to.
 vaultSecrets:
   - name: postgres-credentials
     namespace: stock-analyst-data
     roleName: postgres
-    vaultPath: secret/data/stock-analyst/postgres
-    keys: [POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]
+    secrets:
+      - vaultPath: secret/data/stock-analyst/database
+        keys: [POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]
   - name: minio-credentials
     namespace: stock-analyst-data
     roleName: minio
-    vaultPath: secret/data/stock-analyst/minio
-    keys: [MINIO_ROOT_USER, MINIO_ROOT_PASSWORD]
-  - name: app-secrets
-    namespace: stock-analyst
-    roleName: app
-    vaultPath: secret/data/stock-analyst/app
-    keys:
-      - POSTGRES_USER
-      - POSTGRES_PASSWORD
-      - MINIO_ROOT_USER
-      - MINIO_ROOT_PASSWORD
-      - ANTHROPIC_API_KEY
-      - OPENAI_API_KEY
-      - LANGSMITH_API_KEY
-      - KEYCLOAK_ADMIN
-      - KEYCLOAK_ADMIN_PASSWORD
-      - NEXTAUTH_SECRET
+    secrets:
+      - vaultPath: secret/data/stock-analyst/storage
+        keys: [MINIO_ROOT_USER, MINIO_ROOT_PASSWORD]
   - name: litellm-llm-keys
     namespace: stock-analyst-infra
     roleName: litellm
-    vaultPath: secret/data/stock-analyst/llm-keys
-    keys: [ANTHROPIC_API_KEY, OPENAI_API_KEY]
+    secrets:
+      - vaultPath: secret/data/stock-analyst/llm-keys
+        keys: [ANTHROPIC_API_KEY, OPENAI_API_KEY]
+  # Least-privilege split off of app-secrets below: the Keycloak server
+  # needs its own DB creds (KC_DB_*) and admin bootstrap credentials, but
+  # has no business holding LLM provider keys.
+  - name: keycloak-secrets
+    namespace: stock-analyst
+    roleName: keycloak
+    secrets:
+      - vaultPath: secret/data/stock-analyst/database
+        keys: [POSTGRES_USER, POSTGRES_PASSWORD]
+      - vaultPath: secret/data/stock-analyst/auth
+        keys: [KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD]
+  # api/web/celery-worker/celery-beat/flower all run agent code that can
+  # reach every provider, so — unlike keycloak/postgres/minio/litellm above
+  # — this one bundle stays broad rather than being split further per pod.
+  - name: app-secrets
+    namespace: stock-analyst
+    roleName: app
+    secrets:
+      - vaultPath: secret/data/stock-analyst/llm-keys
+        keys: [ANTHROPIC_API_KEY, OPENAI_API_KEY, TAVILY_API_KEY]
+      - vaultPath: secret/data/stock-analyst/database
+        keys: [POSTGRES_USER, POSTGRES_PASSWORD]
+      - vaultPath: secret/data/stock-analyst/storage
+        keys: [MINIO_ROOT_USER, MINIO_ROOT_PASSWORD]
+      - vaultPath: secret/data/stock-analyst/auth
+        keys: [KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD, KEYCLOAK_CLIENT_SECRET, SECRET_KEY, NEXTAUTH_SECRET]
+      - vaultPath: secret/data/stock-analyst/langsmith
+        keys: [LANGSMITH_API_KEY]
 
 vaultAddress: "http://vault.stock-analyst-infra.svc:8200"

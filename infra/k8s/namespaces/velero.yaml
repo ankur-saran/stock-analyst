@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    app: stock-analyst
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: velero-quota
+  namespace: velero
+spec:
+  hard:
+    # node-agent (kopia file-system-backup uploader) runs one pod per node
+    # and can spike during large PVC backups (postgres-data alone is 1Ti) —
+    # sized above stock-analyst-obs's quota for that headroom.
+    requests.cpu: "8"
+    requests.memory: 48Gi
+    limits.cpu: "8"
+    limits.memory: 48Gi
