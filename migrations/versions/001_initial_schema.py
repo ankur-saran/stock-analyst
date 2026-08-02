@@ -68,7 +68,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column(
             "plan",
-            sa.Enum("starter", "professional", "enterprise",
+            postgresql.ENUM("starter", "professional", "enterprise",
                     name="plan_enum", create_type=False),
             nullable=False,
         ),
@@ -99,7 +99,7 @@ def upgrade() -> None:
         sa.Column("email", sa.String(255), nullable=False),
         sa.Column(
             "role",
-            sa.Enum("viewer", "analyst", "senior_analyst", "admin",
+            postgresql.ENUM("viewer", "analyst", "senior_analyst", "admin",
                     name="user_role_enum", create_type=False),
             nullable=False,
         ),
@@ -163,7 +163,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "status",
-            sa.Enum("setup", "active", "archived",
+            postgresql.ENUM("setup", "active", "archived",
                     name="coverage_status_enum", create_type=False),
             server_default=sa.text("'setup'"),
             nullable=False,
@@ -220,7 +220,7 @@ def upgrade() -> None:
         sa.Column("quality_score", sa.Float(), nullable=True),
         sa.Column(
             "ingest_status",
-            sa.Enum("pending", "indexing", "indexed", "failed", "review_needed",
+            postgresql.ENUM("pending", "indexing", "indexed", "failed", "review_needed",
                     name="ingest_status_enum", create_type=False),
             server_default=sa.text("'pending'"),
             nullable=False,
@@ -246,7 +246,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "output_type",
-            sa.Enum("industry_primer", "lynch_pitch", "munger_invert",
+            postgresql.ENUM("industry_primer", "lynch_pitch", "munger_invert",
                     "quarterly_update", "kpi_snapshot",
                     name="output_type_enum", create_type=False),
             nullable=False,
@@ -267,7 +267,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "enforcer_status",
-            sa.Enum("pending", "approved", "partial", "failed",
+            postgresql.ENUM("pending", "approved", "partial", "failed",
                     name="enforcer_status_enum", create_type=False),
             server_default=sa.text("'pending'"),
             nullable=False,
@@ -314,7 +314,7 @@ def upgrade() -> None:
         sa.Column("period", sa.String(50), nullable=False),
         sa.Column(
             "period_type",
-            sa.Enum("annual", "quarterly",
+            postgresql.ENUM("annual", "quarterly",
                     name="period_type_enum", create_type=False),
             nullable=False,
         ),
@@ -388,7 +388,7 @@ def upgrade() -> None:
         sa.Column("task_type", sa.String(100), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("queued", "running", "completed", "failed", "cancelled",
+            postgresql.ENUM("queued", "running", "completed", "failed", "cancelled",
                     name="task_status_enum", create_type=False),
             server_default=sa.text("'queued'"),
             nullable=False,

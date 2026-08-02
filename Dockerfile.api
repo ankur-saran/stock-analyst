@@ -7,7 +7,11 @@
 # the apt-get block below. See
 # https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#linux
 # if these packages ever need updating for a newer WeasyPrint release.
-FROM python:3.12-slim
+# Pinned to bookworm: the WeasyPrint apt package names below (e.g.
+# libgdk-pixbuf2.0-0, libffi8) are bookworm-era. The floating `3.12-slim`
+# tag now resolves to Debian trixie, where those were renamed and the
+# build fails with "no installation candidate".
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -52,7 +56,13 @@ COPY apps/ apps/
 COPY migrations/ migrations/
 COPY alembic.ini .
 
-RUN pip install --no-cache-dir --no-deps \
+# Installed WITH dependencies (no --no-deps): packages/agents and packages/rag
+# declare the agent/RAG runtime stack (langgraph, langchain-*, litellm,
+# qdrant-client, llama-index-core, sentence-transformers, ...) that apps/api
+# imports at startup via its routers (coverages/search/tasks -> agents.
+# orchestrator.*). With --no-deps those were missing and both the API and the
+# Celery worker crash-looped with ModuleNotFoundError: No module named 'langgraph'.
+RUN pip install --no-cache-dir \
         -e packages/shared \
         -e packages/rag \
         -e packages/agents

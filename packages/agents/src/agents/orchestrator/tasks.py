@@ -178,7 +178,7 @@ async def _run_agent(
         # already committed).
         async with session.begin():
             await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id}
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id}
             )
 
             agent_instance = agent_cls(
@@ -201,7 +201,7 @@ async def _run_agent(
         if output.approved_by_enforcer and output_type is not None and coverage_id is not None:
             async with session.begin():
                 await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id}
+                    text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id}
                 )
                 session.add(
                     ResearchOutput(
@@ -251,7 +251,7 @@ async def _set_task_status(
     async with _AsyncSessionLocal() as session:
         async with session.begin():
             await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id}
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id}
             )
             task = await session.get(TaskQueue, task_uuid)
             if task is None:

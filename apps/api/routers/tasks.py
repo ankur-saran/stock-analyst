@@ -115,7 +115,7 @@ async def run_industry_analysis(
     async with AsyncSessionLocal() as session:
         async with session.begin():
             await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"),
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
                 {"tid": str(current_user.tenant_id)},
             )
             coverage = await session.get(Coverage, coverage_uuid)
@@ -176,7 +176,7 @@ async def run_agent_task_endpoint(
     async with AsyncSessionLocal() as session:
         async with session.begin():
             await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"),
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
                 {"tid": str(current_user.tenant_id)},
             )
             coverage = await session.get(Coverage, coverage_uuid)
@@ -216,7 +216,7 @@ async def task_websocket(
     async with AsyncSessionLocal() as session:
         async with session.begin():
             await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"),
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
                 {"tid": str(current_user.tenant_id)},
             )
             task = await session.get(TaskQueue, task_uuid)

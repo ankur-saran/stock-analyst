@@ -224,7 +224,7 @@ async def orchestrate(
     # transactions tolerates that same sequence fine.
     async with AsyncSessionLocal() as session:
         await session.execute(
-            text("SET LOCAL app.current_tenant_id = :tid"),
+            text("SELECT set_config('app.current_tenant_id', :tid, true)"),
             {"tid": str(current_user.tenant_id)},
         )
         orchestrator = OrchestratorAgent(db_session=session)

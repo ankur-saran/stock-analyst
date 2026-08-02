@@ -110,7 +110,7 @@ async def _check_coverage(
 ) -> None:
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             existing_urls = set(
                 (
                     await session.execute(
@@ -164,7 +164,7 @@ async def _ingest_and_monitor(
 
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             document = Document(
                 id=uuid.uuid4(),
                 coverage_id=uuid.UUID(coverage_id),
@@ -199,7 +199,7 @@ async def _ingest_and_monitor(
 async def _dispatch_earnings_monitor(document_id: uuid.UUID, coverage_id: str, tenant_id: str) -> None:
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             task = TaskQueue(
                 tenant_id=uuid.UUID(tenant_id),
                 coverage_id=uuid.UUID(coverage_id),
@@ -217,7 +217,7 @@ async def _dispatch_earnings_monitor(document_id: uuid.UUID, coverage_id: str, t
 
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             task_row = await session.get(TaskQueue, uuid.UUID(task_id))
             if task_row is not None:
                 task_row.celery_task_id = async_result.id
@@ -236,7 +236,7 @@ def notify_earnings_complete_task(_run_agent_task_result: Any, task_id: str, ten
 async def _notify_earnings_complete(task_id: str, tenant_id: str) -> None:
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
 
             task = await session.get(TaskQueue, uuid.UUID(task_id))
             if task is None or task.status != TaskStatusEnum.completed or task.coverage_id is None:

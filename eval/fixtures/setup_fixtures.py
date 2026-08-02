@@ -82,7 +82,7 @@ _DOCUMENTS_DIR = Path(__file__).parent / "documents"
 
 
 async def _set_tenant(session: AsyncSession, tenant_id: str) -> None:
-    await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+    await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
 
 
 async def setup_fixtures() -> dict[str, Any]:

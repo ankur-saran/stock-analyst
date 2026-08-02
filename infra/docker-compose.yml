@@ -50,7 +50,9 @@ services:
     networks:
       - stockanalyst-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      # qdrant image ships no curl/wget; it does have bash, so probe the REST
+      # port over a bash /dev/tcp connection instead.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -121,7 +123,9 @@ services:
     #           count: all
     #           capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      # ollama image ships no curl/wget; it does have bash, so probe the API
+      # port over a bash /dev/tcp connection instead.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/11434"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -184,7 +188,16 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      KEYCLOAK_URL: http://keycloak:8080
+      # host.docker.internal (not keycloak:8080) so the issuer the API validates
+      # matches the token's iss, which is minted for the browser-facing host.
+      # host.docker.internal resolves to the Docker host from inside containers.
+      KEYCLOAK_URL: http://host.docker.internal:8080
+      # realm id + client id are the HYPHENATED forms the realm-export uses;
+      # code defaults in shared/config.py are non-hyphenated, so without these
+      # the API builds a wrong JWKS URL (/realms/stockanalyst -> 404) and token
+      # validation 500s.
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-stock-analyst}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-stock-analyst-api}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       LITELLM_URL: http://litellm:4000

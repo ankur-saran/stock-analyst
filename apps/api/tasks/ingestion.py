@@ -106,7 +106,7 @@ async def _run_ingestion(document_id: str, coverage_id: str, tenant_id: str) -> 
 
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             document = await session.get(Document, doc_uuid)
             if document is None:
                 raise ValueError(f"document {document_id} not found for tenant {tenant_id}")
@@ -168,7 +168,7 @@ async def _check_duplicate(
 ) -> uuid.UUID | None:
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             duplicate = (
                 await session.execute(
                     select(Document).where(
@@ -211,7 +211,7 @@ async def _finalize_success(
 ) -> None:
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
 
             document = await session.get(Document, doc_uuid)
             document.chunk_count = chunk_count
@@ -241,7 +241,7 @@ async def _finalize_success(
 async def _set_document_status(doc_uuid: uuid.UUID, tenant_id: str, status: IngestStatusEnum) -> None:
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             document = await session.get(Document, doc_uuid)
             if document is not None:
                 document.ingest_status = status
@@ -251,7 +251,7 @@ async def _mark_document_failed(document_id: str, tenant_id: str, error: str) ->
     doc_uuid = uuid.UUID(document_id)
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             document = await session.get(Document, doc_uuid)
             if document is not None:
                 document.ingest_status = IngestStatusEnum.failed
@@ -278,7 +278,7 @@ async def _set_task_status(
         return
     async with _AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+            await session.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": tenant_id})
             task_row = (
                 await session.execute(
                     select(TaskQueue).where(TaskQueue.celery_task_id == celery_task_id)

@@ -34,7 +34,7 @@ async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
             if tenant_id:
                 # SET LOCAL is transaction-scoped; must run inside an active transaction
                 await session.execute(
-                    text("SET LOCAL app.current_tenant_id = :tid"),
+                    text("SELECT set_config('app.current_tenant_id', :tid, true)"),
                     {"tid": str(tenant_id)},
                 )
             yield session

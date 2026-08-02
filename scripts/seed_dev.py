@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import os
+from uuid import UUID
 
 # Make `shared` importable from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "packages", "shared", "src"))
@@ -80,10 +81,24 @@ async def seed(force: bool = False) -> None:
                     await session.delete(ind)
                 await session.commit()
 
+            # The preflight SELECT above autobegins a (read-only) transaction on
+            # the session; end it so the explicit write transaction below can
+            # begin cleanly (otherwise: "A transaction is already begun").
+            await session.rollback()
+
             # ── Tenants ────────────────────────────────────────────────────────
             async with session.begin():
-                tenant_a = Tenant(name=_TENANT_A_NAME, plan=PlanEnum.professional)
-                tenant_b = Tenant(name=_TENANT_B_NAME, plan=PlanEnum.starter)
+                # Fixed IDs so they match the tenant_id claims hardcoded in the
+                # Keycloak realm (infra/keycloak/realm-export.json): the "-a"
+                # users carry ...0001 (Acme), analyst-b carries ...0002 (Beta).
+                tenant_a = Tenant(
+                    id=UUID("00000000-0000-0000-0000-000000000001"),
+                    name=_TENANT_A_NAME, plan=PlanEnum.professional,
+                )
+                tenant_b = Tenant(
+                    id=UUID("00000000-0000-0000-0000-000000000002"),
+                    name=_TENANT_B_NAME, plan=PlanEnum.starter,
+                )
                 session.add_all([tenant_a, tenant_b])
                 await session.flush()  # resolves server-side defaults (created_at)
 
