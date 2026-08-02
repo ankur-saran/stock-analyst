@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: loki
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loki
+        {{- include "stock-analyst-obs.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: loki
+          image: {{ .Values.loki.image }}
+          args:
+            - -config.file=/etc/loki/local-config.yaml
+          ports:
+            - name: http
+              containerPort: {{ .Values.loki.port }}
+          volumeMounts:
+            - name: loki-data
+              mountPath: /loki
+          resources:
+            requests:
+              cpu: {{ .Values.loki.resources.requests.cpu }}
+              memory: {{ .Values.loki.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.loki.resources.limits.cpu }}
+              memory: {{ .Values.loki.resources.limits.memory }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+      volumes:
+        - name: loki-data
+          persistentVolumeClaim:
+            claimName: loki-data

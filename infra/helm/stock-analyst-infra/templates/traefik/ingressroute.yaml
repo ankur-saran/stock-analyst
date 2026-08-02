@@ -1,0 +1,72 @@
+# apiVersion targets Traefik v3's CRD group. If the cluster's k3s bundles
+# the older Traefik v2 addon, change this to traefik.containo.us/v1alpha1.
+# `certResolver: internal-ca` assumes Traefik's own static config (its Helm
+# release, not this chart) already defines a certResolver by that name.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: stock-analyst-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stock-analyst-infra.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.traefik.hosts.api }}`)
+      kind: Rule
+      middlewares:
+        - name: rate-limit
+        - name: security-headers
+      services:
+        - name: stock-analyst-api
+          namespace: stock-analyst
+          port: 8000
+  tls:
+    certResolver: {{ .Values.traefik.certResolver }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: stock-analyst-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stock-analyst-infra.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.traefik.hosts.web }}`)
+      kind: Rule
+      middlewares:
+        - name: rate-limit
+        - name: security-headers
+      services:
+        - name: stock-analyst-web
+          namespace: stock-analyst
+          port: 3000
+  tls:
+    certResolver: {{ .Values.traefik.certResolver }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: stock-analyst-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stock-analyst-infra.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.traefik.hosts.auth }}`)
+      kind: Rule
+      middlewares:
+        - name: rate-limit
+        - name: security-headers
+      services:
+        - name: keycloak
+          namespace: stock-analyst
+          port: 8080
+  tls:
+    certResolver: {{ .Values.traefik.certResolver }}

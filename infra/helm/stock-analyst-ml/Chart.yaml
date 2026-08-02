@@ -1,0 +1,6 @@
+apiVersion: v2
+name: stock-analyst-ml
+description: ML services on the GPU node for Stock Analyst AI — Ollama, embedding warm-up, reranker
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

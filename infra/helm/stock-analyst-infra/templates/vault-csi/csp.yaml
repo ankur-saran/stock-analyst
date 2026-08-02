@@ -1,0 +1,38 @@
+# One SecretProviderClass per service secret bundle, each syncing straight
+# into a native Kubernetes Secret (spec.secretObjects) so consuming
+# Deployments elsewhere in the cluster can keep using plain secretKeyRef —
+# they never need the CSI driver, only whichever pod first mounts this
+# volume does (see the vault-secrets volume on postgres/minio/api/litellm).
+# NOTE: these render into namespaces other than .Release.Namespace
+# (stock-analyst-data, stock-analyst) — installing this release therefore
+# requires a Helm/kubectl identity with write access to all of them.
+{{- range .Values.vaultSecrets }}
+{{- $svc := . }}
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: {{ $svc.name }}
+  namespace: {{ $svc.namespace }}
+  labels:
+    {{- include "stock-analyst-infra.labels" $ | nindent 4 }}
+spec:
+  provider: vault
+  parameters:
+    vaultAddress: {{ $.Values.vaultAddress | quote }}
+    roleName: {{ $svc.roleName | quote }}
+    objects: |
+      {{- range $svc.keys }}
+      - objectName: {{ . | quote }}
+        secretPath: {{ $svc.vaultPath | quote }}
+        secretKey: {{ . | quote }}
+      {{- end }}
+  secretObjects:
+    - secretName: {{ $svc.name }}
+      type: Opaque
+      data:
+        {{- range $svc.keys }}
+        - objectName: {{ . | quote }}
+          key: {{ . | quote }}
+        {{- end }}
+{{- end }}

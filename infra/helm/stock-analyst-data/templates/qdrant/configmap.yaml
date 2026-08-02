@@ -1,0 +1,20 @@
+# Mounted at /qdrant/config/production.yaml. Qdrant merges this over its
+# built-in defaults whenever RUN_MODE=production (set on the container below).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qdrant-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: qdrant
+    {{- include "stock-analyst-data.labels" . | nindent 4 }}
+data:
+  production.yaml: |
+    service:
+      http_port: {{ .Values.qdrant.httpPort }}
+      grpc_port: {{ .Values.qdrant.grpcPort }}
+      enable_tls: false
+    storage:
+      on_disk_payload: true
+    telemetry_disabled: true
+    log_level: INFO

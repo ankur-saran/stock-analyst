@@ -1,0 +1,24 @@
+# Runs once against an empty PGDATA (official postgres image convention:
+# every *.sql in /docker-entrypoint-initdb.d executes, in filename order, only
+# on first-ever startup of a fresh volume). Tunes the server for the node's
+# allocated 8 CPU / 64Gi limit (Architecture §10.1 data node).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-tuning
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: postgres
+    {{- include "stock-analyst-data.labels" . | nindent 4 }}
+data:
+  01-tuning.sql: |
+    ALTER SYSTEM SET max_connections = '200';
+    ALTER SYSTEM SET shared_buffers = '16GB';
+    ALTER SYSTEM SET effective_cache_size = '48GB';
+    ALTER SYSTEM SET maintenance_work_mem = '2GB';
+    ALTER SYSTEM SET work_mem = '64MB';
+    ALTER SYSTEM SET checkpoint_completion_target = '0.9';
+    ALTER SYSTEM SET wal_buffers = '16MB';
+    ALTER SYSTEM SET random_page_cost = '1.1';
+    ALTER SYSTEM SET min_wal_size = '2GB';
+    ALTER SYSTEM SET max_wal_size = '8GB';

@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+data:
+  dashboards-provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: stock-analyst
+        orgId: 1
+        folder: "Stock Analyst"
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+data:
+  overview.json: |
+    {
+      "uid": "stock-analyst-overview",
+      "title": "Stock Analyst Overview",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "id": 1, "type": "timeseries", "title": "Citation Coverage Rate",
+          "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+          "targets": [{"expr": "avg(citation_coverage_rate)", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 2, "type": "timeseries", "title": "Hallucination Rate",
+          "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+          "targets": [{"expr": "avg(hallucination_rate)", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 3, "type": "timeseries", "title": "Average Retries",
+          "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+          "targets": [{"expr": "avg(avg_retries)", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 4, "type": "stat", "title": "Active Tasks",
+          "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+          "targets": [{"expr": "sum(active_tasks)", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        }
+      ]
+    }
+  performance.json: |
+    {
+      "uid": "stock-analyst-performance",
+      "title": "Stock Analyst Performance",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "id": 1, "type": "timeseries", "title": "Ingestion Latency (p95)",
+          "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+          "targets": [{"expr": "ingestion_latency_p95", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 2, "type": "timeseries", "title": "Retrieval Latency (p95)",
+          "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+          "targets": [{"expr": "retrieval_latency_p95", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 3, "type": "timeseries", "title": "Agent End-to-End Latency",
+          "gridPos": {"x": 0, "y": 8, "w": 24, "h": 8},
+          "targets": [{"expr": "agent_e2e_latency", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        }
+      ]
+    }
+  cost.json: |
+    {
+      "uid": "stock-analyst-cost",
+      "title": "Stock Analyst Cost",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "5m",
+      "time": {"from": "now-24h", "to": "now"},
+      "panels": [
+        {
+          "id": 1, "type": "timeseries", "title": "LLM Tokens / Hour by Model",
+          "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8},
+          "targets": [{"expr": "sum(llm_tokens_per_hour) by (model)", "legendFormat": "{{`{{model}}`}}", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 2, "type": "table", "title": "Estimated Cost / Tenant",
+          "gridPos": {"x": 0, "y": 8, "w": 24, "h": 8},
+          "targets": [{"expr": "sum(estimated_cost_per_tenant) by (tenant_id)", "legendFormat": "{{`{{tenant_id}}`}}", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        }
+      ]
+    }
+  infrastructure.json: |
+    {
+      "uid": "stock-analyst-infrastructure",
+      "title": "Stock Analyst Infrastructure",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "id": 1, "type": "timeseries", "title": "CPU Usage by Node",
+          "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+          "targets": [{"expr": "100 - (avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{`{{node}}`}}", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 2, "type": "timeseries", "title": "Memory Available by Node",
+          "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+          "targets": [{"expr": "node_memory_MemAvailable_bytes", "legendFormat": "{{`{{node}}`}}", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 3, "type": "timeseries", "title": "Disk Available by Node",
+          "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+          "targets": [{"expr": "node_filesystem_avail_bytes{fstype!=\"tmpfs\"}", "legendFormat": "{{`{{node}}`}}:{{`{{mountpoint}}`}}", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 4, "type": "stat", "title": "Qdrant Vector Count",
+          "gridPos": {"x": 12, "y": 8, "w": 6, "h": 8},
+          "targets": [{"expr": "sum(qdrant_collection_points_total)", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        },
+        {
+          "id": 5, "type": "stat", "title": "PostgreSQL Size",
+          "gridPos": {"x": 18, "y": 8, "w": 6, "h": 8},
+          "targets": [{"expr": "sum(pg_database_size_bytes)", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
+        }
+      ]
+    }

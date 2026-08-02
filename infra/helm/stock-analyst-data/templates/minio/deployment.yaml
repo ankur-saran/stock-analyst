@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: minio
+    {{- include "stock-analyst-data.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        {{- include "stock-analyst-data.labels" . | nindent 8 }}
+    spec:
+      {{- include "stock-analyst-data.nodeAffinity" . | nindent 6 }}
+      # Bound (via configure_vault.sh) to the "minio" Vault role — lets the
+      # CSI driver below authenticate and mount secret/data/stock-analyst/minio.
+      serviceAccountName: vault-auth
+      containers:
+        - name: minio
+          image: {{ .Values.minio.image }}
+          command: ["minio", "server", "/data", "--console-address", ":{{ .Values.minio.consolePort }}"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.existingSecret }}
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.existingSecret }}
+                  key: MINIO_ROOT_PASSWORD
+          ports:
+            - name: api
+              containerPort: {{ .Values.minio.apiPort }}
+            - name: console
+              containerPort: {{ .Values.minio.consolePort }}
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+            # Mounting this is what makes the CSI driver sync
+            # minio-credentials (see the env vars above) into a real Secret.
+            - name: vault-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          resources:
+            requests:
+              cpu: {{ .Values.minio.resources.requests.cpu }}
+              memory: {{ .Values.minio.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.minio.resources.limits.cpu }}
+              memory: {{ .Values.minio.resources.limits.memory }}
+          readinessProbe:
+            exec:
+              command: ["mc", "ready", "local"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["mc", "ready", "local"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 5
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: minio-data
+        - name: vault-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: minio-credentials

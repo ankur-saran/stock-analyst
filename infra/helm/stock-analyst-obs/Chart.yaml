@@ -1,0 +1,6 @@
+apiVersion: v2
+name: stock-analyst-obs
+description: Observability stack for Stock Analyst AI — Prometheus, Grafana, Loki, Uptime Kuma
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

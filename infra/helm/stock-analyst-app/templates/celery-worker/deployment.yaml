@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: celery-worker
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.celeryWorker.hpa.enabled }}
+  replicas: {{ .Values.celeryWorker.hpa.minReplicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celery-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celery-worker
+        {{- include "stock-analyst-app.labels" . | nindent 8 }}
+    spec:
+      {{- include "stock-analyst-app.nodeAffinity" . | nindent 6 }}
+      containers:
+        - name: celery-worker
+          image: "{{ .Values.global.registry }}/stock-analyst-api:{{ .Values.celeryWorker.imageTag }}"
+          command: {{ .Values.celeryWorker.command | toJson }}
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: POSTGRES_PASSWORD
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: MINIO_ROOT_PASSWORD
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: ANTHROPIC_API_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: OPENAI_API_KEY
+            - name: LANGSMITH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: LANGSMITH_API_KEY
+          resources:
+            requests:
+              cpu: {{ .Values.celeryWorker.resources.requests.cpu }}
+              memory: {{ .Values.celeryWorker.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.celeryWorker.resources.limits.cpu }}
+              memory: {{ .Values.celeryWorker.resources.limits.memory }}

@@ -1,0 +1,77 @@
+# infra/helm/stock-analyst-data/values.yaml
+# Defaults for the stateful data tier. All secrets referenced here (postgres,
+# minio) are expected to already exist as Kubernetes Secrets synced by the
+# Vault CSI driver / Vault Agent Injector (see stock-analyst-infra's
+# vault-csi templates) — no plaintext credentials belong in this file.
+
+global:
+  storageClass: local-path
+  # Every PVC/Pod in this chart is pinned to the data node via this label.
+  nodeAffinity:
+    key: role
+    value: data
+  registry: registry.stock-analyst.internal
+
+postgres:
+  image: postgres:16
+  database: stockanalyst
+  # Name of the pre-existing Secret (Vault-synced) with keys:
+  # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+  existingSecret: postgres-credentials
+  # Image used for the alembic-migrate init container. Same image as the API
+  # (Dockerfile.api bundles apps/, packages/, migrations/, alembic.ini).
+  migrationImage: "registry.stock-analyst.internal/stock-analyst-api:latest"
+  storage: 1Ti
+  reclaimPolicy: Retain
+  resources:
+    requests:
+      cpu: "4"
+      memory: 32Gi
+    limits:
+      cpu: "8"
+      memory: 64Gi
+  port: 5432
+
+qdrant:
+  image: qdrant/qdrant:latest
+  storage: 500Gi
+  reclaimPolicy: Retain
+  resources:
+    requests:
+      cpu: "4"
+      memory: 16Gi
+    limits:
+      cpu: "8"
+      memory: 32Gi
+  httpPort: 6333
+  grpcPort: 6334
+
+minio:
+  image: minio/minio:latest
+  # Name of the pre-existing Secret (Vault-synced) with keys:
+  # MINIO_ROOT_USER, MINIO_ROOT_PASSWORD
+  existingSecret: minio-credentials
+  storage: 10Ti
+  reclaimPolicy: Retain
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
+  apiPort: 9000
+  consolePort: 9001
+
+redis:
+  image: redis:7-alpine
+  storage: 50Gi
+  reclaimPolicy: Retain
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
+  port: 6379

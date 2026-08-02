@@ -1,0 +1,20 @@
+# local-path (k3s's built-in dynamic provisioner) sets persistentVolumeReclaimPolicy:
+# Delete on every PV it provisions, and that field lives on the PV, not the PVC,
+# so it cannot be declared here. To get the Retain behavior this data requires,
+# infra/k8s/scripts/bootstrap.sh patches the bound PV's reclaimPolicy to Retain
+# right after this chart installs (see the "patch PVC reclaim policy" step).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: postgres
+    {{- include "stock-analyst-data.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.global.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.postgres.storage }}

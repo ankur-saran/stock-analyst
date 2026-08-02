@@ -1,0 +1,61 @@
+# Helm hook: runs once before every `helm upgrade --install app ...`,
+# ahead of the api Deployment rolling out. This is where "alembic upgrade
+# head" actually happens — see the note in
+# infra/helm/stock-analyst-data/templates/postgres/deployment.yaml for why
+# it isn't an init container on the postgres pod itself. The wait-loop below
+# is the wait-for-it.sh pattern required by the deployment constraints: don't
+# invoke alembic until postgres is actually accepting connections.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: db-migrate
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db-migrate
+        {{- include "stock-analyst-app.labels" . | nindent 8 }}
+    spec:
+      {{- include "stock-analyst-app.nodeAffinity" . | nindent 6 }}
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.global.registry }}/stock-analyst-api:{{ .Values.migration.imageTag }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until python -c "import socket; s=socket.socket(); s.settimeout(2); s.connect(('$POSTGRES_HOST', int('$POSTGRES_PORT')))" 2>/dev/null; do
+                echo "waiting for postgres at $POSTGRES_HOST:$POSTGRES_PORT..."
+                sleep 2
+              done
+          envFrom:
+            - configMapRef:
+                name: app-config
+      containers:
+        - name: alembic-upgrade
+          image: "{{ .Values.global.registry }}/stock-analyst-api:{{ .Values.migration.imageTag }}"
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: POSTGRES_PASSWORD

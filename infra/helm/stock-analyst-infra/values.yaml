@@ -1,0 +1,66 @@
+# infra/helm/stock-analyst-infra/values.yaml
+
+global:
+  registry: registry.stock-analyst.internal
+
+litellm:
+  image: ghcr.io/berriai/litellm:main-latest
+  port: 4000
+  existingSecret: litellm-llm-keys
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+traefik:
+  certResolver: internal-ca
+  rateLimit:
+    average: 100
+    burst: 200
+  hosts:
+    api: api.stock-analyst.internal
+    web: app.stock-analyst.internal
+    auth: auth.stock-analyst.internal
+
+# Every SecretProviderClass this chart renders, and the native Kubernetes
+# Secret each syncs into (consumed elsewhere via plain secretKeyRef — see
+# stock-analyst-data's postgres/minio deployments and stock-analyst-app's
+# api deployment). vaultAddress/roleName assume the AppRole + Kubernetes
+# auth mappings configure_vault.sh sets up during bootstrap.sh's manual
+# Vault-configuration step.
+vaultSecrets:
+  - name: postgres-credentials
+    namespace: stock-analyst-data
+    roleName: postgres
+    vaultPath: secret/data/stock-analyst/postgres
+    keys: [POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB]
+  - name: minio-credentials
+    namespace: stock-analyst-data
+    roleName: minio
+    vaultPath: secret/data/stock-analyst/minio
+    keys: [MINIO_ROOT_USER, MINIO_ROOT_PASSWORD]
+  - name: app-secrets
+    namespace: stock-analyst
+    roleName: app
+    vaultPath: secret/data/stock-analyst/app
+    keys:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - MINIO_ROOT_USER
+      - MINIO_ROOT_PASSWORD
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - LANGSMITH_API_KEY
+      - KEYCLOAK_ADMIN
+      - KEYCLOAK_ADMIN_PASSWORD
+      - NEXTAUTH_SECRET
+  - name: litellm-llm-keys
+    namespace: stock-analyst-infra
+    roleName: litellm
+    vaultPath: secret/data/stock-analyst/llm-keys
+    keys: [ANTHROPIC_API_KEY, OPENAI_API_KEY]
+
+vaultAddress: "http://vault.stock-analyst-infra.svc:8200"

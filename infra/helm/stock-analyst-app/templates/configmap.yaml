@@ -1,0 +1,25 @@
+# Non-secret runtime config shared by api, celery-worker and celery-beat
+# (mirrors the `&api-env` anchor in infra/docker-compose.yml). Credentials
+# live in .Values.global.existingSecret instead — see api/deployment.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  POSTGRES_HOST: {{ .Values.dependencies.postgres.host | quote }}
+  POSTGRES_PORT: {{ .Values.dependencies.postgres.port | quote }}
+  POSTGRES_DB: {{ .Values.dependencies.postgres.database | quote }}
+  REDIS_URL: {{ .Values.dependencies.redis.url | quote }}
+  QDRANT_HOST: {{ .Values.dependencies.qdrant.host | quote }}
+  QDRANT_PORT: {{ .Values.dependencies.qdrant.port | quote }}
+  MINIO_ENDPOINT: {{ .Values.dependencies.minio.endpoint | quote }}
+  LITELLM_URL: {{ .Values.dependencies.litellm.url | quote }}
+  OLLAMA_BASE_URL: {{ .Values.dependencies.ollama.url | quote }}
+  RERANKER_URL: {{ .Values.dependencies.reranker.url | quote }}
+  KEYCLOAK_URL: {{ .Values.dependencies.keycloak.publicUrl | quote }}
+  KEYCLOAK_REALM: {{ .Values.dependencies.keycloak.realm | quote }}
+  KEYCLOAK_CLIENT_ID: {{ .Values.dependencies.keycloak.clientId | quote }}

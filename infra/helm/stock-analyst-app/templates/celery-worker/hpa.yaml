@@ -1,0 +1,34 @@
+{{- if .Values.celeryWorker.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: celery-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: celery-worker
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery-worker
+  minReplicas: {{ .Values.celeryWorker.hpa.minReplicas }}
+  maxReplicas: {{ .Values.celeryWorker.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.celeryWorker.hpa.targetCPUUtilizationPercentage }}
+    # Requires the Prometheus Adapter to publish celery_queue_length (sourced
+    # from the Flower exporter, see stock-analyst-obs) as a Kubernetes
+    # external metric. Either trigger independently scales the Deployment up.
+    - type: External
+      external:
+        metric:
+          name: celery_queue_length
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.celeryWorker.hpa.queueLengthThreshold | quote }}
+{{- end }}

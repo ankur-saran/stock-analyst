@@ -1,0 +1,138 @@
+# infra/helm/stock-analyst-app/values.yaml
+# Defaults for the stateless application tier (FastAPI, Next.js, Celery,
+# Flower, Keycloak). Cross-namespace service DNS names point at the
+# stock-analyst-data / stock-analyst-ml / stock-analyst-infra releases —
+# install those charts first (see infra/k8s/scripts/bootstrap.sh).
+
+global:
+  registry: registry.stock-analyst.internal
+  environment: production
+  nodeAffinity:
+    key: role
+    value: app
+  # Secret holding app-wide credentials (Vault-synced): POSTGRES_USER,
+  # POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD,
+  # ANTHROPIC_API_KEY, OPENAI_API_KEY, LANGSMITH_API_KEY, KEYCLOAK_ADMIN,
+  # KEYCLOAK_ADMIN_PASSWORD, NEXTAUTH_SECRET.
+  existingSecret: app-secrets
+
+# Non-secret service coordinates for cross-namespace dependencies.
+dependencies:
+  postgres:
+    host: postgres.stock-analyst-data.svc.cluster.local
+    port: "5432"
+    database: stockanalyst
+  redis:
+    url: redis://redis.stock-analyst-data.svc.cluster.local:6379/0
+  qdrant:
+    host: qdrant.stock-analyst-data.svc.cluster.local
+    port: "6333"
+  minio:
+    endpoint: http://minio.stock-analyst-data.svc.cluster.local:9000
+  litellm:
+    url: http://litellm.stock-analyst-infra.svc.cluster.local:4000
+  ollama:
+    url: http://ollama.stock-analyst-ml.svc.cluster.local:11434
+  reranker:
+    url: http://reranker.stock-analyst-ml.svc.cluster.local:8001
+  keycloak:
+    # Public/browser-facing issuer host — must match the `iss` claim in
+    # tokens Keycloak mints, so the API's JWKS validation lines up. Routed
+    # through Traefik (stock-analyst-infra) at auth.stock-analyst.internal.
+    publicUrl: https://auth.stock-analyst.internal
+    realm: stock-analyst
+    clientId: stock-analyst-api
+    webClientId: stock-analyst-web
+
+api:
+  imageTag: latest
+  replicas: 3
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+  port: 8000
+  pdb:
+    minAvailable: 2
+
+web:
+  imageTag: latest
+  replicas: 2
+  resources:
+    requests:
+      cpu: "0.5"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  port: 3000
+
+celeryWorker:
+  imageTag: latest
+  command: ["celery", "-A", "apps.api.tasks.scheduler", "worker", "--concurrency=4", "--loglevel=info"]
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 60
+    # Requires the Prometheus Adapter (or KEDA) to expose this as a k8s
+    # custom/external metric — see stock-analyst-obs. Falls back to the CPU
+    # rule above if the custom metrics API isn't registered.
+    queueLengthThreshold: 10
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "8"
+      memory: 16Gi
+
+celeryBeat:
+  imageTag: latest
+  command: ["celery", "-A", "apps.api.celery_config", "beat", "--loglevel=info"]
+  resources:
+    requests:
+      cpu: "0.5"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+flower:
+  imageTag: latest
+  command: ["celery", "-A", "apps.api.celery_config", "flower", "--port=5555"]
+  port: 5555
+  resources:
+    requests:
+      cpu: "0.5"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+keycloak:
+  image: quay.io/keycloak/keycloak:24.0
+  command: ["start", "--optimized", "--proxy-headers=xforwarded", "--hostname-strict=false"]
+  replicas: 1
+  port: 8080
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+migration:
+  # Image used to run `alembic upgrade head` as a Helm hook Job before the
+  # api Deployment rolls out. Same image as api (Dockerfile.api bundles
+  # migrations/ + alembic.ini).
+  imageTag: latest

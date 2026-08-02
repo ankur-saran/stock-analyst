@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uptime-kuma-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: uptime-kuma
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.uptimeKuma.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.uptimeKuma.storage }}

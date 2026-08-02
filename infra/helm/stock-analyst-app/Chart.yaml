@@ -1,0 +1,6 @@
+apiVersion: v2
+name: stock-analyst-app
+description: Stateless application services for Stock Analyst AI — FastAPI, Next.js, Celery, Flower, Keycloak
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

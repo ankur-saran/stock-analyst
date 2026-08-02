@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: uptime-kuma
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: uptime-kuma
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: uptime-kuma
+  ports:
+    - name: http
+      port: {{ .Values.uptimeKuma.port }}
+      targetPort: http

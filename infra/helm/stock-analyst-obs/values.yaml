@@ -1,0 +1,59 @@
+# infra/helm/stock-analyst-obs/values.yaml
+
+prometheus:
+  image: prom/prometheus:latest
+  port: 9090
+  retention: 15d
+  storage: 100Gi
+  storageClass: local-path
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+nodeExporter:
+  image: prom/node-exporter:latest
+  port: 9100
+
+grafana:
+  image: grafana/grafana:latest
+  port: 3000
+  storage: 20Gi
+  storageClass: local-path
+  existingSecret: grafana-admin
+  resources:
+    requests:
+      cpu: "0.5"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+loki:
+  image: grafana/loki:latest
+  port: 3100
+  storage: 200Gi
+  storageClass: local-path
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+uptimeKuma:
+  image: louislam/uptime-kuma:1
+  port: 3001
+  storage: 10Gi
+  storageClass: local-path
+  resources:
+    requests:
+      cpu: "0.25"
+      memory: 512Mi
+    limits:
+      cpu: "0.5"
+      memory: 1Gi

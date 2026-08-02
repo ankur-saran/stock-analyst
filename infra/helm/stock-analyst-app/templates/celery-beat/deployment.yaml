@@ -1,0 +1,52 @@
+# Beat is the sole scheduler that enqueues periodic tasks (e.g. the daily
+# SEC-filing sweep). replicas MUST stay 1 — two Beat processes both read the
+# same schedule and both enqueue on trigger, double-firing every periodic
+# task. There is deliberately no hpa.yaml next to this file.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: celery-beat
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    # Never run two Beat pods at once, even transiently during a rollout.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celery-beat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celery-beat
+        {{- include "stock-analyst-app.labels" . | nindent 8 }}
+    spec:
+      {{- include "stock-analyst-app.nodeAffinity" . | nindent 6 }}
+      containers:
+        - name: celery-beat
+          image: "{{ .Values.global.registry }}/stock-analyst-api:{{ .Values.celeryBeat.imageTag }}"
+          command: {{ .Values.celeryBeat.command | toJson }}
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.existingSecret }}
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: {{ .Values.celeryBeat.resources.requests.cpu }}
+              memory: {{ .Values.celeryBeat.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.celeryBeat.resources.limits.cpu }}
+              memory: {{ .Values.celeryBeat.resources.limits.memory }}

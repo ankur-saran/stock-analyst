@@ -1,0 +1,36 @@
+# Cluster-wide read access is required for the `role: node` service
+# discovery in prometheus/configmap.yaml (finds each node's InternalIP so
+# node-exporter, running hostNetwork on port 9100, can be scraped directly).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stock-analyst-prometheus
+  labels:
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stock-analyst-prometheus
+  labels:
+    {{- include "stock-analyst-obs.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stock-analyst-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: {{ .Release.Namespace }}

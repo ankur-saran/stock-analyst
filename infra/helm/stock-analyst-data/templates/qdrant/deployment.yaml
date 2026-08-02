@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qdrant
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: qdrant
+    {{- include "stock-analyst-data.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: qdrant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: qdrant
+        {{- include "stock-analyst-data.labels" . | nindent 8 }}
+    spec:
+      {{- include "stock-analyst-data.nodeAffinity" . | nindent 6 }}
+      containers:
+        - name: qdrant
+          image: {{ .Values.qdrant.image }}
+          env:
+            - name: RUN_MODE
+              value: production
+          ports:
+            - name: http
+              containerPort: {{ .Values.qdrant.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.qdrant.grpcPort }}
+          volumeMounts:
+            - name: qdrant-data
+              mountPath: /qdrant/storage
+            - name: qdrant-config
+              mountPath: /qdrant/config/production.yaml
+              subPath: production.yaml
+              readOnly: true
+          resources:
+            requests:
+              cpu: {{ .Values.qdrant.resources.requests.cpu }}
+              memory: {{ .Values.qdrant.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.qdrant.resources.limits.cpu }}
+              memory: {{ .Values.qdrant.resources.limits.memory }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 5
+      volumes:
+        - name: qdrant-data
+          persistentVolumeClaim:
+            claimName: qdrant-data
+        - name: qdrant-config
+          configMap:
+            name: qdrant-config

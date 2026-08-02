@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reranker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: reranker
+    {{- include "stock-analyst-ml.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.reranker.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: reranker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: reranker
+        {{- include "stock-analyst-ml.labels" . | nindent 8 }}
+    spec:
+      # Shares the GPU node but doesn't request nvidia.com/gpu — MiniLM-L-6
+      # is small enough to run comfortably on CPU.
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      containers:
+        - name: reranker
+          image: {{ .Values.reranker.image }}
+          env:
+            - name: RERANKER_MODEL
+              value: {{ .Values.reranker.model | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.reranker.port }}
+          resources:
+            requests:
+              cpu: {{ .Values.reranker.resources.requests.cpu }}
+              memory: {{ .Values.reranker.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.reranker.resources.limits.cpu }}
+              memory: {{ .Values.reranker.resources.limits.memory }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 5

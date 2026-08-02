@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: flower
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: flower
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+  annotations:
+    # Flower's /api/workers response is what stock-analyst-obs's Prometheus
+    # scrapes to derive celery_queue_length (Task 6).
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: "{{ .Values.flower.port }}"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: flower
+  ports:
+    - name: http
+      port: {{ .Values.flower.port }}
+      targetPort: http

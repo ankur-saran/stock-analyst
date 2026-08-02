@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flower
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: flower
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flower
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flower
+        {{- include "stock-analyst-app.labels" . | nindent 8 }}
+    spec:
+      {{- include "stock-analyst-app.nodeAffinity" . | nindent 6 }}
+      containers:
+        - name: flower
+          image: "{{ .Values.global.registry }}/stock-analyst-api:{{ .Values.flower.imageTag }}"
+          command: {{ .Values.flower.command | toJson }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.flower.port }}
+          envFrom:
+            - configMapRef:
+                name: app-config
+          resources:
+            requests:
+              cpu: {{ .Values.flower.resources.requests.cpu }}
+              memory: {{ .Values.flower.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.flower.resources.limits.cpu }}
+              memory: {{ .Values.flower.resources.limits.memory }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15

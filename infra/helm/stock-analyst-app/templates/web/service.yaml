@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # Named stock-analyst-web (not just "web") so Traefik's IngressRoute in
+  # stock-analyst-infra can address it unambiguously across namespaces.
+  name: stock-analyst-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: web
+    {{- include "stock-analyst-app.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: {{ .Values.web.port }}
+      targetPort: http

@@ -1,0 +1,50 @@
+# infra/helm/stock-analyst-ml/values.yaml
+# All pods in this chart are pinned to the GPU node via nodeSelector — the
+# NVIDIA device plugin DaemonSet must already be running on that node
+# (advertising nvidia.com/gpu) before this chart installs, or the ollama
+# pod will stay Pending forever.
+
+global:
+  registry: registry.stock-analyst.internal
+  nodeSelector:
+    role: ml
+
+ollama:
+  image: ollama/ollama:latest
+  port: 11434
+  storage: 500Gi
+  storageClass: local-path
+  embeddingModel: nomic-embed-text:v1.5
+  resources:
+    requests:
+      cpu: "8"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: "16"
+      memory: 64Gi
+      nvidia.com/gpu: "1"
+
+embeddingJob:
+  # curl-based warm-up job — hits ollama's HTTP API rather than mounting the
+  # model PVC directly, so it never contends with the ollama pod for the
+  # ReadWriteOnce volume.
+  image: curlimages/curl:8.10.1
+  models:
+    - nomic-embed-text:v1.5
+    # local LLM fallback tier referenced by litellm's router_settings
+    # (infra/litellm/config.yaml) — without this pull it 404s at request time.
+    - llama3.1:70b
+
+reranker:
+  image: "registry.stock-analyst.internal/stock-analyst-reranker:latest"
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  port: 8001
+  replicas: 1
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
