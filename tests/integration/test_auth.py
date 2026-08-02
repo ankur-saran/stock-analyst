@@ -22,6 +22,8 @@ import pytest
 import pytest_asyncio
 from jose import jwt as jose_jwt
 
+pytestmark = pytest.mark.integration
+
 APP_URL = "http://localhost:8000"
 KC_URL = "http://localhost:8080"
 REALM = "stockanalyst"

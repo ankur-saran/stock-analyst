@@ -31,6 +31,8 @@ from rag.ingestion.pipeline import EmbeddingPipeline
 from rag.retrieval.hybrid_retriever import HybridRetriever
 from shared.config import Settings
 
+pytestmark = pytest.mark.integration
+
 settings = Settings()
 
 TENANT_A_ID = str(uuid.uuid4())

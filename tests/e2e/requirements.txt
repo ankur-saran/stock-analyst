@@ -1,0 +1,7 @@
+# Extra dependencies for tests/e2e/ beyond packages/shared, packages/rag, and
+# packages/agents. Mirrors the eval/requirements.txt convention.
+playwright>=1.45
+pytest-asyncio>=0.23
+
+# After installing, pull the browser binary once:
+#   playwright install chromium

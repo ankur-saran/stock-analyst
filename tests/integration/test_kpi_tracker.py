@@ -54,6 +54,8 @@ from agents.kpi_tracker.agent import KPITrackerAgent
 from agents.kpi_tracker.tools import compute_yoy_change, upsert_kpi_timeseries
 from agents.shared.message import AgentMessage, AgentType
 
+pytestmark = pytest.mark.integration
+
 settings = Settings()
 
 # ── Agent-run fixture identifiers (Qdrant-backed, one shared coverage) ───────
