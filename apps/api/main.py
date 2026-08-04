@@ -59,6 +59,7 @@ def _create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(TenantMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_CORS_ORIGINS,
@@ -66,7 +67,6 @@ def _create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(TenantMiddleware)
 
     app.include_router(health.router)
     app.include_router(coverages.router)

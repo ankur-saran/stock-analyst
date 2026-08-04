@@ -7,8 +7,12 @@ import httpx
 from fastapi import Depends, HTTPException, Query, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from shared.config import Settings
+from shared.models import User, UserRoleEnum
+
+from apps.api.db import DbSession
 
 settings = Settings()
 
@@ -79,6 +83,7 @@ async def _decode_token(token: str) -> dict:
 
 
 async def get_current_user(
+    db: DbSession,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> CurrentUser:
     if credentials is None:
@@ -98,12 +103,32 @@ async def get_current_user(
     known_roles = [r for r in payload.get("realm_access", {}).get("roles", []) if r in ROLE_HIERARCHY]
     role = known_roles[0] if known_roles else "viewer"
 
-    return CurrentUser(
+    user = CurrentUser(
         user_id=UUID(payload["sub"]),
         tenant_id=UUID(str(raw_tenant_id)),
         role=role,
-        email=payload.get("email", ""),
+        email=payload.get("email") or f"{payload['sub']}@keycloak.local",
     )
+
+    # Keycloak is the source of truth for identity; a JWT with a valid
+    # signature may still reference a user this DB has never seen (e.g. a
+    # realm user with no corresponding row). JIT-provision it here so FK
+    # columns like coverages.created_by have something to point at.
+    await db.execute(
+        pg_insert(User)
+        .values(
+            id=user.user_id,
+            tenant_id=user.tenant_id,
+            email=user.email,
+            role=UserRoleEnum(user.role),
+        )
+        .on_conflict_do_update(
+            index_elements=[User.id],
+            set_={"email": user.email, "role": UserRoleEnum(user.role)},
+        )
+    )
+
+    return user
 
 
 async def get_current_user_ws(token: str = Query(...)) -> CurrentUser:

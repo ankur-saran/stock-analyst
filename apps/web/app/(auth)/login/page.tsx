@@ -21,7 +21,7 @@ export default function LoginPage() {
       <CardContent className="pt-4">
         <Button
           className="w-full"
-          onClick={() => signIn("keycloak")}
+          onClick={() => signIn("keycloak", { callbackUrl: "/coverages" })}
         >
           Sign in with your organization
         </Button>
